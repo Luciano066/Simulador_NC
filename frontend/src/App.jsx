@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import Plot from "react-plotly.js";
+import { resolveApiBaseUrl } from "./api/client";
 import { simulateOrbit } from "./api/simulate";
 import { fetchVeff } from "./api/veff";
 import { simulateOrbitNC } from "./api/simulate_nc";
 import { fetchVeffNC } from "./api/veff_nc";
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 function PlanetIcon({ className }) {
   return (
@@ -56,6 +59,32 @@ function computeRange(x, y, padFrac = 0.08) {
   return { xRange: [cx - r, cx + r], yRange: [cy - r, cy + r] };
 }
 
+function toFriendlyErrorMessage(error, fallback = "Não foi possível concluir a simulação.") {
+  const raw = String(error?.message ?? error ?? "").trim();
+  if (!raw) return fallback;
+
+  if (raw.includes("Failed to fetch") || raw.includes("NetworkError")) {
+    return `Não foi possível conectar à API (${API_BASE_URL}). Verifique se o backend está rodando.`;
+  }
+  if (raw.includes("Parâmetros proibidos em r0")) {
+    return "Sem órbita real para os parâmetros escolhidos. Ajuste E, L ou r0.";
+  }
+  if (raw.includes("r0 deve ser > 2M")) {
+    return "Raio inicial inválido. Use r0 > 2M para iniciar fora do horizonte.";
+  }
+  if (raw.includes("r_min deve ser > 2M")) {
+    return "Intervalo inválido: r_min deve ser maior que 2M.";
+  }
+  if (raw.includes("r0 deve ser > r_+")) {
+    return "Raio inicial inválido. Use r0 maior que o horizonte externo r+.";
+  }
+  if (raw.includes("r_min deve ser > r_+")) {
+    return "Intervalo inválido: r_min deve ser maior que o horizonte externo r+.";
+  }
+
+  return raw;
+}
+
 export default function App() {
   const [p, setP] = useState({
     metric: "schwarzschild",
@@ -75,30 +104,43 @@ export default function App() {
 
   const [traj, setTraj] = useState(null);
   const [veff, setVeff] = useState(null);
-  const [err, setErr] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [orbitErr, setOrbitErr] = useState("");
+  const [potentialErr, setPotentialErr] = useState("");
+  const [orbitLoading, setOrbitLoading] = useState(false);
+  const [potentialLoading, setPotentialLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const [useEnergyParam, setUseEnergyParam] = useState(true);
   const [autoRange, setAutoRange] = useState(true);
-  const [nc, setNc] = useState({
+  const [ncOrbit, setNcOrbit] = useState({
     metric: "nc-schwarzschild",
     particle: "massive",
     M: 1.0,
-    theta: 1.0,
-    E: 1.0,
-    L: 7.0,
+    theta: 0.05,
+    E: 0.48,
+    L: 4.0,
     r0: 20.0,
+    r_stop: 120.0,
     radial_sign: "in",
     turns: 6,
     n: 4000,
-    r_min: 2.2,
-    r_max: 50.0,
+  });
+  const [ncPotential, setNcPotential] = useState({
+    metric: "nc-schwarzschild",
+    particle: "massive",
+    M: 0.09,
+    theta: 0.001,
+    E: 0.3,
+    L: 0.1,
+    r_min: 0.001,
+    r_max: 2.0,
     n_veff: 2000,
   });
   const [ncTraj, setNcTraj] = useState(null);
   const [ncVeff, setNcVeff] = useState(null);
-  const [ncErr, setNcErr] = useState("");
-  const [ncLoading, setNcLoading] = useState(false);
+  const [ncOrbitErr, setNcOrbitErr] = useState("");
+  const [ncPotentialErr, setNcPotentialErr] = useState("");
+  const [ncOrbitLoading, setNcOrbitLoading] = useState(false);
+  const [ncPotentialLoading, setNcPotentialLoading] = useState(false);
 
   useEffect(() => {
     document.body.classList.toggle("dark-mode", darkMode);
@@ -106,8 +148,50 @@ export default function App() {
 
   const setNum = (k) => (e) => setP((s) => ({ ...s, [k]: Number(e.target.value) }));
   const setStr = (k) => (e) => setP((s) => ({ ...s, [k]: e.target.value }));
-  const setNcNum = (k) => (e) => setNc((s) => ({ ...s, [k]: Number(e.target.value) }));
-  const setNcStr = (k) => (e) => setNc((s) => ({ ...s, [k]: e.target.value }));
+  const setNcOrbitNum = (k) => (e) => setNcOrbit((s) => ({ ...s, [k]: Number(e.target.value) }));
+  const setNcOrbitStr = (k) => (e) => setNcOrbit((s) => ({ ...s, [k]: e.target.value }));
+  const setNcPotentialNum = (k) => (e) => setNcPotential((s) => ({ ...s, [k]: Number(e.target.value) }));
+  const setNcPotentialStr = (k) => (e) => setNcPotential((s) => ({ ...s, [k]: e.target.value }));
+  const applyNcPreset = (preset) => {
+    if (preset === "fig5") {
+      setNcPotential((s) => ({
+        ...s,
+        particle: "massive",
+        M: 0.09,
+        theta: 0.001,
+        E: 0.3,
+        L: 0.1,
+        r_min: 0.001,
+        r_max: 2.0,
+      }));
+      return;
+    }
+    if (preset === "fig6") {
+      setNcPotential((s) => ({
+        ...s,
+        particle: "massive",
+        M: 0.09,
+        theta: 0.001,
+        E: 0.3,
+        L: 0.4,
+        r_min: 0.001,
+        r_max: 2.0,
+      }));
+      return;
+    }
+    if (preset === "fig7") {
+      setNcPotential((s) => ({
+        ...s,
+        particle: "photon",
+        M: 0.09,
+        theta: 0.001,
+        E: 0.3,
+        L: 0.6,
+        r_min: 0.001,
+        r_max: 2.0,
+      }));
+    }
+  };
 
   const phi_max = useMemo(() => 2 * Math.PI * Math.max(1, Math.min(20, p.turns)), [p.turns]);
   const horizon = 2 * p.M;
@@ -168,9 +252,8 @@ export default function App() {
   const rMinUsed = autoRange ? autoRangeValues.rMin : p.r_min;
   const rMaxUsed = autoRange ? autoRangeValues.rMax : p.r_max;
   const energyParamInvalid = useEnergyParamForMassive && p.E < -0.5;
-  const ncPhiMax = useMemo(() => 2 * Math.PI * Math.max(1, Math.min(20, nc.turns)), [nc.turns]);
-  const ncE2 = nc.E * nc.E;
-  const ncB = nc.E !== 0 ? (nc.L / nc.E) : Infinity;
+  const ncPhiMax = useMemo(() => 2 * Math.PI * Math.max(1, Math.min(20, ncOrbit.turns)), [ncOrbit.turns]);
+  const ncB = ncOrbit.E !== 0 ? (ncOrbit.L / ncOrbit.E) : Infinity;
 
   const plotTheme = useMemo(() => {
     if (darkMode) {
@@ -193,105 +276,224 @@ export default function App() {
     };
   }, [darkMode]);
 
-  async function run() {
-    setErr("");
+  async function runOrbit() {
+    setOrbitErr("");
+    if (!Number.isFinite(p.M) || p.M <= 0) {
+      setOrbitErr("Massa central inválida. Use M > 0.");
+      return;
+    }
+    if (!Number.isFinite(p.L) || p.L <= 0) {
+      setOrbitErr("Momento angular inválido. Use L > 0.");
+      return;
+    }
     if (energyParamInvalid || !Number.isFinite(E_spec)) {
-      setErr("Energia inválida. Para corpos massivos, use Ē ≥ -0.5.");
+      setOrbitErr("Energia inválida. Para corpos massivos, use Ē ≥ -0.5.");
+      return;
+    }
+    if (E_spec <= 0) {
+      setOrbitErr("Energia inválida. Use E > 0.");
+      return;
+    }
+    if (!Number.isFinite(p.r0) || p.r0 <= horizon) {
+      setOrbitErr(`Raio inicial inválido. Use r0 > 2M (${horizon.toFixed(3)}).`);
+      return;
+    }
+    if (!Number.isFinite(p.n) || p.n < 100) {
+      setOrbitErr("Número de pontos da órbita inválido. Use n >= 100.");
+      return;
+    }
+
+    setOrbitLoading(true);
+    try {
+      const t = await simulateOrbit({
+        metric: p.metric,
+        particle: p.particle,
+        M: p.M,
+        E: E_spec,
+        L: p.L,
+        r0: p.r0,
+        radial_sign: p.radial_sign,
+        phi_max,
+        n: p.n,
+      });
+      setTraj(t);
+    } catch (e) {
+      setOrbitErr(toFriendlyErrorMessage(e, "Falha ao calcular órbita."));
+      setTraj(null);
+    } finally {
+      setOrbitLoading(false);
+    }
+  }
+
+  async function runPotential() {
+    setPotentialErr("");
+    if (!Number.isFinite(p.M) || p.M <= 0) {
+      setPotentialErr("Massa central inválida. Use M > 0.");
+      return;
+    }
+    if (!Number.isFinite(p.L) || p.L <= 0) {
+      setPotentialErr("Momento angular inválido. Use L > 0.");
+      return;
+    }
+    if (energyParamInvalid || !Number.isFinite(E_spec)) {
+      setPotentialErr("Energia inválida. Para corpos massivos, use Ē ≥ -0.5.");
+      return;
+    }
+    if (E_spec <= 0) {
+      setPotentialErr("Energia inválida. Use E > 0.");
+      return;
+    }
+    if (!Number.isFinite(p.n_veff) || p.n_veff < 10) {
+      setPotentialErr("Número de pontos do potencial inválido. Use n_veff >= 10.");
       return;
     }
     if (!Number.isFinite(rMinUsed) || !Number.isFinite(rMaxUsed) || rMaxUsed <= rMinUsed) {
-      setErr("Intervalo de r inválido. Ajuste r_min/r_max.");
+      setPotentialErr("Intervalo de r inválido. Ajuste r_min/r_max.");
       return;
     }
-    setLoading(true);
-    try {
-      const [t, v] = await Promise.all([
-        simulateOrbit({
-          metric: p.metric,
-          particle: p.particle,
-          M: p.M,
-          E: E_spec,
-          L: p.L,
-          r0: p.r0,
-          radial_sign: p.radial_sign,
-          phi_max,
-          n: p.n,
-        }),
-        fetchVeff({
-          metric: p.metric,
-          particle: p.particle,
-          M: p.M,
-          E: E_spec,
-          L: p.L,
-          r_min: rMinUsed,
-          r_max: rMaxUsed,
-          n: p.n_veff,
-        }),
-      ]);
 
-      setTraj(t);
+    setPotentialLoading(true);
+    try {
+      const v = await fetchVeff({
+        metric: p.metric,
+        particle: p.particle,
+        M: p.M,
+        E: E_spec,
+        L: p.L,
+        r_min: rMinUsed,
+        r_max: rMaxUsed,
+        n: p.n_veff,
+      });
       setVeff(v);
     } catch (e) {
-      setErr(String(e.message || e));
-      setTraj(null);
+      setPotentialErr(toFriendlyErrorMessage(e, "Falha ao calcular potencial."));
       setVeff(null);
     } finally {
-      setLoading(false);
+      setPotentialLoading(false);
     }
   }
 
-  async function runNC() {
-    setNcErr("");
-    if (!Number.isFinite(nc.theta) || nc.theta <= 0) {
-      setNcErr("Theta inválido. Use θ > 0.");
+  async function runNCOrbit() {
+    setNcOrbitErr("");
+    if (!Number.isFinite(ncOrbit.M) || ncOrbit.M <= 0) {
+      setNcOrbitErr("Massa central inválida. Use M > 0.");
       return;
     }
-    if (!Number.isFinite(nc.r_min) || !Number.isFinite(nc.r_max) || nc.r_max <= nc.r_min) {
-      setNcErr("Intervalo de r inválido. Ajuste r_min/r_max.");
+    if (!Number.isFinite(ncOrbit.theta) || ncOrbit.theta <= 0) {
+      setNcOrbitErr("Theta inválido. Use θ > 0.");
       return;
     }
-    setNcLoading(true);
-    try {
-      const [t, v] = await Promise.all([
-        simulateOrbitNC({
-          metric: nc.metric,
-          particle: nc.particle,
-          M: nc.M,
-          theta: nc.theta,
-          E: nc.E,
-          L: nc.L,
-          r0: nc.r0,
-          radial_sign: nc.radial_sign,
-          phi_max: ncPhiMax,
-          n: nc.n,
-        }),
-        fetchVeffNC({
-          metric: nc.metric,
-          particle: nc.particle,
-          M: nc.M,
-          theta: nc.theta,
-          E: nc.E,
-          L: nc.L,
-          r_min: nc.r_min,
-          r_max: nc.r_max,
-          n: nc.n_veff,
-        }),
-      ]);
+    if (!Number.isFinite(ncOrbit.E) || ncOrbit.E <= 0) {
+      setNcOrbitErr("Energia inválida. Use E > 0.");
+      return;
+    }
+    if (!Number.isFinite(ncOrbit.L) || ncOrbit.L <= 0) {
+      setNcOrbitErr("Momento angular inválido. Use L > 0.");
+      return;
+    }
+    if (!Number.isFinite(ncOrbit.r0) || ncOrbit.r0 <= 0) {
+      setNcOrbitErr("Raio inicial inválido. Use r0 > 0.");
+      return;
+    }
+    if (!Number.isFinite(ncOrbit.r_stop) || ncOrbit.r_stop <= 0) {
+      setNcOrbitErr("Limite de raio inválido. Use r_stop > 0.");
+      return;
+    }
+    if (!Number.isFinite(ncOrbit.n) || ncOrbit.n < 100) {
+      setNcOrbitErr("Número de pontos da órbita inválido. Use n >= 100.");
+      return;
+    }
 
+    setNcOrbitLoading(true);
+    try {
+      const t = await simulateOrbitNC({
+        metric: ncOrbit.metric,
+        particle: ncOrbit.particle,
+        M: ncOrbit.M,
+        theta: ncOrbit.theta,
+        E: ncOrbit.E,
+        L: ncOrbit.L,
+        r0: ncOrbit.r0,
+        r_stop: ncOrbit.r_stop,
+        radial_sign: ncOrbit.radial_sign,
+        phi_max: ncPhiMax,
+        n: ncOrbit.n,
+      });
       setNcTraj(t);
+    } catch (e) {
+      setNcOrbitErr(toFriendlyErrorMessage(e, "Falha ao calcular órbita NC."));
+      setNcTraj(null);
+    } finally {
+      setNcOrbitLoading(false);
+    }
+  }
+
+  async function runNCPotential() {
+    setNcPotentialErr("");
+    if (!Number.isFinite(ncPotential.M) || ncPotential.M <= 0) {
+      setNcPotentialErr("Massa central inválida. Use M > 0.");
+      return;
+    }
+    if (!Number.isFinite(ncPotential.theta) || ncPotential.theta <= 0) {
+      setNcPotentialErr("Theta inválido. Use θ > 0.");
+      return;
+    }
+    if (!Number.isFinite(ncPotential.E) || ncPotential.E <= 0) {
+      setNcPotentialErr("Energia inválida. Use E > 0.");
+      return;
+    }
+    if (!Number.isFinite(ncPotential.L) || ncPotential.L <= 0) {
+      setNcPotentialErr("Momento angular inválido. Use L > 0.");
+      return;
+    }
+    if (!Number.isFinite(ncPotential.n_veff) || ncPotential.n_veff < 10) {
+      setNcPotentialErr("Número de pontos do potencial inválido. Use n_veff >= 10.");
+      return;
+    }
+    if (
+      !Number.isFinite(ncPotential.r_min) ||
+      !Number.isFinite(ncPotential.r_max) ||
+      ncPotential.r_max <= ncPotential.r_min
+    ) {
+      setNcPotentialErr("Intervalo de r inválido. Ajuste r_min/r_max.");
+      return;
+    }
+
+    setNcPotentialLoading(true);
+    try {
+      const v = await fetchVeffNC({
+        metric: ncPotential.metric,
+        particle: ncPotential.particle,
+        M: ncPotential.M,
+        theta: ncPotential.theta,
+        E: ncPotential.E,
+        L: ncPotential.L,
+        r_min: ncPotential.r_min,
+        r_max: ncPotential.r_max,
+        n: ncPotential.n_veff,
+      });
       setNcVeff(v);
     } catch (e) {
-      setNcErr(String(e.message || e));
-      setNcTraj(null);
+      setNcPotentialErr(toFriendlyErrorMessage(e, "Falha ao calcular potencial NC."));
       setNcVeff(null);
     } finally {
-      setNcLoading(false);
+      setNcPotentialLoading(false);
     }
+  }
+
+  function runAll() {
+    void runOrbit();
+    void runPotential();
+  }
+
+  function runNCAll() {
+    void runNCOrbit();
+    void runNCPotential();
   }
 
   useEffect(() => {
-    run();
-    runNC();
+    runAll();
+    runNCAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -309,6 +511,23 @@ export default function App() {
   const ncRanges = computeRange(ncXPlot, ncYPlot);
   const ncX0 = ncXPlot?.[0], ncY0 = ncYPlot?.[0];
   const ncXF = ncXPlot?.[ncXPlot.length - 1], ncYF = ncYPlot?.[ncYPlot.length - 1];
+  const ncOrbitOuterHorizon = ncTraj?.meta?.r_outer_horizon ?? null;
+  const ncPotentialOuterHorizon = ncVeff?.meta?.r_outer_horizon ?? null;
+  const ncMassBand = 3.0 * Math.sqrt(Math.max(ncPotential.theta, 0));
+  const ncAsymptote = ncPotential.particle === "massive" ? 0.5 : 0.0;
+  const ncPotentialRange = useMemo(() => {
+    const values = (ncVeff?.V_eff ?? []).filter((v) => Number.isFinite(v));
+    if (!values.length) return undefined;
+    const sorted = [...values].sort((a, b) => a - b);
+    const at = (q) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(q * (sorted.length - 1))))];
+    let ymin = at(0.02);
+    let ymax = at(0.98);
+    ymin = Math.min(ymin, ncAsymptote, ncPotential.E);
+    ymax = Math.max(ymax, ncAsymptote, ncPotential.E);
+    const span = Math.max(1e-6, ymax - ymin);
+    const pad = 0.08 * span;
+    return [ymin - pad, ymax + pad];
+  }, [ncVeff, ncAsymptote, ncPotential.E]);
 
   const baseLayout = {
     paper_bgcolor: plotTheme.paper,
@@ -457,8 +676,11 @@ export default function App() {
             </div>
           </div>
 
-          <button onClick={run} disabled={loading} className="click">
-            {loading ? "Calculando..." : "Gerar Órbita"}
+          <button onClick={runOrbit} disabled={orbitLoading} className="click">
+            {orbitLoading ? "Calculando órbita..." : "Gerar Órbita"}
+          </button>
+          <button onClick={runPotential} disabled={potentialLoading} className="click">
+            {potentialLoading ? "Calculando potencial..." : "Gerar Potencial"}
           </button>
 
           <div className="valor">
@@ -472,7 +694,8 @@ export default function App() {
             )}
           </div>
 
-          {err && <pre className="error">{err}</pre>}
+          {orbitErr && <pre className="error">Órbita: {orbitErr}</pre>}
+          {potentialErr && <pre className="error">Potencial: {potentialErr}</pre>}
         </div>
       </article>
 
@@ -657,12 +880,14 @@ export default function App() {
           <h5>Buraco negro não comutativo (NCSBH)</h5>
           <p className="note">
             Modelo com massa efetiva m(r) espalhada por θ. Use θ &gt; 0 (unidades de L²).
+            Órbita e potencial usam parâmetros independentes para evitar conflito entre os gráficos.
           </p>
+          <h5>Parâmetros da órbita NC</h5>
           <div className="input">
             <div className="input-grid">
               <label className="field">
                 Tipo
-                <select className="css-input" value={nc.particle} onChange={setNcStr("particle")}>
+                <select className="css-input" value={ncOrbit.particle} onChange={setNcOrbitStr("particle")}>
                   <option value="massive">Corpo massivo</option>
                   <option value="photon">Fóton</option>
                 </select>
@@ -670,33 +895,39 @@ export default function App() {
 
               <label className="field">
                 Massa (M)
-                <input className="css-input" type="number" step="0.1" value={nc.M} onChange={setNcNum("M")} />
+                <input className="css-input" type="number" step="0.1" value={ncOrbit.M} onChange={setNcOrbitNum("M")} />
               </label>
 
               <label className="field">
                 Parâmetro θ
-                <input className="css-input" type="number" step="0.1" value={nc.theta} onChange={setNcNum("theta")} />
+                <input className="css-input" type="number" step="0.1" value={ncOrbit.theta} onChange={setNcOrbitNum("theta")} />
                 <small>θ controla o espalhamento</small>
               </label>
 
               <label className="field">
                 Energia (E)
-                <input className="css-input" type="number" step="0.01" value={nc.E} onChange={setNcNum("E")} />
+                <input className="css-input" type="number" step="0.01" value={ncOrbit.E} onChange={setNcOrbitNum("E")} />
               </label>
 
               <label className="field">
                 Momento angular (L)
-                <input className="css-input" type="number" step="0.1" value={nc.L} onChange={setNcNum("L")} />
+                <input className="css-input" type="number" step="0.1" value={ncOrbit.L} onChange={setNcOrbitNum("L")} />
               </label>
 
               <label className="field">
                 Raio inicial (r0)
-                <input className="css-input" type="number" step="0.1" value={nc.r0} onChange={setNcNum("r0")} />
+                <input className="css-input" type="number" step="0.1" value={ncOrbit.r0} onChange={setNcOrbitNum("r0")} />
+              </label>
+
+              <label className="field">
+                Limite de fuga (r_stop)
+                <input className="css-input" type="number" step="1" value={ncOrbit.r_stop} onChange={setNcOrbitNum("r_stop")} />
+                <small>Encerra a órbita quando r cresce demais</small>
               </label>
 
               <label className="field">
                 Direção radial
-                <select className="css-input" value={nc.radial_sign} onChange={setNcStr("radial_sign")}>
+                <select className="css-input" value={ncOrbit.radial_sign} onChange={setNcOrbitStr("radial_sign")}>
                   <option value="in">in (cair)</option>
                   <option value="out">out (sair)</option>
                 </select>
@@ -704,41 +935,90 @@ export default function App() {
 
               <label className="field">
                 Voltas (1–20)
-                <input className="css-input" type="number" min="1" max="20" step="1" value={nc.turns} onChange={setNcNum("turns")} />
+                <input className="css-input" type="number" min="1" max="20" step="1" value={ncOrbit.turns} onChange={setNcOrbitNum("turns")} />
               </label>
 
               <label className="field">
                 Pontos da órbita (n)
-                <input className="css-input" type="number" step="100" value={nc.n} onChange={setNcNum("n")} />
-              </label>
-
-              <label className="field">
-                r_min (Veff)
-                <input className="css-input" type="number" step="0.1" value={nc.r_min} onChange={setNcNum("r_min")} />
-              </label>
-
-              <label className="field">
-                r_max (Veff)
-                <input className="css-input" type="number" step="1" value={nc.r_max} onChange={setNcNum("r_max")} />
-              </label>
-
-              <label className="field">
-                Pontos Veff (n)
-                <input className="css-input" type="number" step="100" value={nc.n_veff} onChange={setNcNum("n_veff")} />
+                <input className="css-input" type="number" step="100" value={ncOrbit.n} onChange={setNcOrbitNum("n")} />
               </label>
             </div>
           </div>
 
-          <button onClick={runNC} disabled={ncLoading} className="click">
-            {ncLoading ? "Calculando..." : "Gerar Órbita NC"}
+          <h5>Parâmetros do potencial NC</h5>
+          <p className="note">
+            Presets abaixo reproduzem o comportamento qualitativo das Figuras 5, 6 e 7 do TCC.
+          </p>
+          <div className="input">
+            <div className="input-grid">
+              <label className="field">
+                Tipo
+                <select className="css-input" value={ncPotential.particle} onChange={setNcPotentialStr("particle")}>
+                  <option value="massive">Corpo massivo</option>
+                  <option value="photon">Fóton</option>
+                </select>
+              </label>
+
+              <label className="field">
+                Massa (M)
+                <input className="css-input" type="number" step="0.1" value={ncPotential.M} onChange={setNcPotentialNum("M")} />
+              </label>
+
+              <label className="field">
+                Parâmetro θ
+                <input className="css-input" type="number" step="0.1" value={ncPotential.theta} onChange={setNcPotentialNum("theta")} />
+              </label>
+
+              <label className="field">
+                Energia (E)
+                <input className="css-input" type="number" step="0.01" value={ncPotential.E} onChange={setNcPotentialNum("E")} />
+              </label>
+
+              <label className="field">
+                Momento angular (L)
+                <input className="css-input" type="number" step="0.1" value={ncPotential.L} onChange={setNcPotentialNum("L")} />
+              </label>
+
+              <label className="field">
+                r_min (Veff)
+                <input className="css-input" type="number" step="0.001" value={ncPotential.r_min} onChange={setNcPotentialNum("r_min")} />
+              </label>
+
+              <label className="field">
+                r_max (Veff)
+                <input className="css-input" type="number" step="0.1" value={ncPotential.r_max} onChange={setNcPotentialNum("r_max")} />
+              </label>
+
+              <label className="field">
+                Pontos Veff (n)
+                <input className="css-input" type="number" step="100" value={ncPotential.n_veff} onChange={setNcPotentialNum("n_veff")} />
+              </label>
+            </div>
+          </div>
+
+          <button onClick={runNCOrbit} disabled={ncOrbitLoading} className="click">
+            {ncOrbitLoading ? "Calculando órbita NC..." : "Gerar Órbita NC"}
+          </button>
+          <button onClick={runNCPotential} disabled={ncPotentialLoading} className="click">
+            {ncPotentialLoading ? "Calculando potencial NC..." : "Gerar Potencial NC"}
+          </button>
+          <button onClick={() => applyNcPreset("fig5")} className="click">
+            Preset Fig. 5
+          </button>
+          <button onClick={() => applyNcPreset("fig6")} className="click">
+            Preset Fig. 6
+          </button>
+          <button onClick={() => applyNcPreset("fig7")} className="click">
+            Preset Fig. 7
           </button>
 
           <div className="valor">
-            φ_max = <strong>{ncPhiMax.toFixed(3)}</strong> rad (turns = {nc.turns}) | b = L/E =
+            órbita: φ_max = <strong>{ncPhiMax.toFixed(3)}</strong> rad (turns = {ncOrbit.turns}) | b = L/E =
             <strong> {Number.isFinite(ncB) ? ncB.toFixed(3) : "∞"}</strong>
           </div>
 
-          {ncErr && <pre className="error">{ncErr}</pre>}
+          {ncOrbitErr && <pre className="error">Órbita NC: {ncOrbitErr}</pre>}
+          {ncPotentialErr && <pre className="error">Potencial NC: {ncPotentialErr}</pre>}
         </div>
       </article>
 
@@ -788,6 +1068,19 @@ export default function App() {
                 yaxis: { title: "y", scaleanchor: "x", range: ncRanges?.yRange, ...axisBase },
                 hovermode: "closest",
                 uirevision: "keep-zoom",
+                shapes: Number.isFinite(ncOrbitOuterHorizon)
+                  ? [{
+                      type: "circle",
+                      xref: "x",
+                      yref: "y",
+                      x0: -ncOrbitOuterHorizon,
+                      y0: -ncOrbitOuterHorizon,
+                      x1: ncOrbitOuterHorizon,
+                      y1: ncOrbitOuterHorizon,
+                      line: { width: 2, dash: "dot", color: plotTheme.accent },
+                      fillcolor: plotTheme.horizonFill,
+                    }]
+                  : [],
               }}
               config={{ responsive: true, displaylogo: false }}
               useResizeHandler
@@ -798,8 +1091,18 @@ export default function App() {
           {ncTraj?.meta && (
             <div className="valor">
               points_returned: <strong>{ncTraj.meta.points_returned}</strong>
+              {" | "}captured: <strong>{String(Boolean(ncTraj.meta.captured))}</strong>
+              {" | "}clipped_by_r_stop: <strong>{String(Boolean(ncTraj.meta.clipped_by_r_stop))}</strong>
+              {" | "}has_horizon: <strong>{String(Boolean(ncTraj.meta.has_horizon))}</strong>
+              {Number.isFinite(ncOrbitOuterHorizon) ? (
+                <>{" | "}r+ = <strong>{Number(ncOrbitOuterHorizon).toFixed(3)}</strong></>
+              ) : null}
             </div>
           )}
+          <p className="note">
+            Para partícula massiva, quando <strong>E ≥ 0.5</strong> a órbita tende a escapar.
+            O parâmetro <strong>r_stop</strong> corta a trajetória de fuga para manter o gráfico legível.
+          </p>
         </div>
       </article>
 
@@ -811,24 +1114,63 @@ export default function App() {
               data={[
                 {
                   x: ncVeff?.r ?? [],
-                  y: ncVeff?.V_eff2 ?? [],
+                  y: ncVeff?.V_eff ?? [],
                   type: "scatter",
                   mode: "lines",
-                  name: "V_eff²(r)",
+                  name: "V_eff(r)",
                 },
                 {
                   x: ncVeff?.r ?? [],
-                  y: (ncVeff?.r ?? []).map(() => ncE2),
+                  y: (ncVeff?.r ?? []).map(() => ncPotential.E),
                   type: "scatter",
                   mode: "lines",
-                  name: "E²",
+                  name: "E",
                 },
               ]}
               layout={{
                 ...baseLayout,
                 title: "Potencial efetivo (NCSBH)",
                 xaxis: { title: "r", ...axisBase },
-                yaxis: { title: "V_eff²", ...axisBase },
+                yaxis: {
+                  title: "V_eff",
+                  ...axisBase,
+                  range: ncPotentialRange,
+                },
+                shapes: [
+                  {
+                    type: "rect",
+                    x0: 0,
+                    x1: ncMassBand,
+                    y0: 0,
+                    y1: 1,
+                    xref: "x",
+                    yref: "paper",
+                    line: { width: 0 },
+                    fillcolor: "rgba(80, 140, 230, 0.18)",
+                  },
+                  {
+                    type: "line",
+                    x0: 0,
+                    x1: 1,
+                    y0: ncAsymptote,
+                    y1: ncAsymptote,
+                    xref: "paper",
+                    yref: "y",
+                    line: { width: 1, dash: "dash", color: plotTheme.grid },
+                  },
+                  ...(Number.isFinite(ncPotentialOuterHorizon)
+                    ? [{
+                        type: "line",
+                        x0: ncPotentialOuterHorizon,
+                        x1: ncPotentialOuterHorizon,
+                        y0: 0,
+                        y1: 1,
+                        xref: "x",
+                        yref: "paper",
+                        line: { width: 2, dash: "dot", color: plotTheme.accent },
+                      }]
+                    : []),
+                ],
               }}
               config={{ responsive: true, displaylogo: false }}
               useResizeHandler
@@ -844,7 +1186,10 @@ export default function App() {
           )}
 
           <p className="note">
-            Para órbitas reais, precisa <strong>E² ≥ V_eff²(r)</strong>.
+            Para órbitas reais, precisa <strong>E ≥ V_eff(r)</strong>.
+            {Number.isFinite(ncPotentialOuterHorizon) ? (
+              <> Para iniciar fora do buraco negro, use também <strong>r0 &gt; r+</strong>.</>
+            ) : null}
           </p>
         </div>
       </article>

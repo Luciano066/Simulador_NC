@@ -1,5 +1,11 @@
 import numpy as np
-from app.core.observables import f_schwarzschild, f_nc_schwarzschild
+from app.core.observables import (
+    f_schwarzschild,
+    f_nc_schwarzschild,
+    fprime_nc_schwarzschild,
+    veff_nc_schwarzschild,
+    nc_horizons,
+)
 
 def _drdphi0_from_E(M: float, E: float, L: float, r0: float, particle: str, radial_sign: str) -> float:
     """
@@ -102,6 +108,10 @@ def orbit_u_phi(
             u[i + 2 :] = np.nan
             up[i + 2 :] = np.nan
             break
+        if (1.0 / u[i + 1]) <= (2.0 * M * 1.0005):
+            u[i + 2 :] = np.nan
+            up[i + 2 :] = np.nan
+            break
 
     r = 1.0 / u
     return phi, r
@@ -116,12 +126,14 @@ def orbit_r_phi_nc(
     phi_max: float,
     n: int,
     particle: str,
+    r_outer_horizon: float | None = None,
+    r_stop: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Integra órbita para métrica não-comutativa tipo Schwarzschild:
-      ds^2 = -f(r) dt^2 + f(r)^{-1} dr^2 + r^2 dΩ^2
-    usando dr/dφ = ± (r^2/L) * sqrt(E^2 - f(r) * (1 + L^2/r^2)) (massivo)
-         ou dr/dφ = ± (r^2/L) * sqrt(E^2 - f(r) * (L^2/r^2)) (fóton)
+    Integra órbita NC em variável u(φ)=1/r, usando a convenção:
+      (1/2) (dr/dλ)^2 + V_eff(r) = E
+      V_eff(r) = f(r) * (K + L²/(2r²))
+    com K=1/2 (massivo) e K=0 (fóton).
     """
     if M <= 0:
         raise ValueError("M > 0")
@@ -133,64 +145,123 @@ def orbit_r_phi_nc(
         raise ValueError("r0 > 0")
     if n < 10:
         raise ValueError("n >= 10")
+    if r_stop is not None and r_stop <= 0:
+        raise ValueError("r_stop > 0")
 
     phi = np.linspace(0.0, phi_max, n, dtype=np.float64)
     h = phi[1] - phi[0]
-    r = np.empty(n, dtype=np.float64)
-    r[0] = r0
 
-    sign = -1.0 if radial_sign == "in" else 1.0
-
-    f0 = float(f_nc_schwarzschild(np.array([r0], dtype=np.float64), M, theta)[0])
     if particle == "massive":
-        veff2_0 = f0 * (1.0 + (L * L) / (r0 * r0))
+        kappa = 0.5
     elif particle == "photon":
-        veff2_0 = f0 * ((L * L) / (r0 * r0))
+        kappa = 0.0
     else:
         raise ValueError("particle deve ser 'massive' ou 'photon'")
 
-    if (E * E) < veff2_0:
+    veff0 = float(veff_nc_schwarzschild(np.array([r0], dtype=np.float64), M, theta, L, particle)[0])
+    if E < veff0:
         raise ValueError(
-            f"Parâmetros proibidos em r0={r0:.6g}: E²={(E*E):.6g} < Veff²(r0)={veff2_0:.6g}. "
+            f"Parâmetros proibidos em r0={r0:.6g}: E={E:.6g} < Veff(r0)={veff0:.6g}. "
             f"Ajuste E/L ou escolha outro r0."
         )
 
-    def drdphi(rval: float) -> float:
-        if rval <= 0 or not np.isfinite(rval):
+    sign = -1.0 if radial_sign == "in" else 1.0
+    drdlambda0 = sign * np.sqrt(max(2.0 * (E - veff0), 0.0))
+    u0 = 1.0 / r0
+    up0 = -drdlambda0 / L
+
+    u = np.empty(n, dtype=np.float64)
+    up = np.empty(n, dtype=np.float64)
+    u[0] = u0
+    up[0] = up0
+
+    L2 = L * L
+    scale = max(M, np.sqrt(theta), 1.0)
+    if r_outer_horizon is None:
+        horizons = nc_horizons(M, theta)
+        r_outer = horizons[-1] if horizons else None
+    else:
+        r_outer = r_outer_horizon
+
+    def d2u_dphi2(uval: float) -> float:
+        if uval <= 0.0 or not np.isfinite(uval):
             return np.nan
+        rval = 1.0 / uval
         f = float(f_nc_schwarzschild(np.array([rval], dtype=np.float64), M, theta)[0])
-        if particle == "massive":
-            inside = (E * E) - f * (1.0 + (L * L) / (rval * rval))
-        elif particle == "photon":
-            inside = (E * E) - f * ((L * L) / (rval * rval))
-        else:
-            raise ValueError("particle deve ser 'massive' ou 'photon'")
-        if inside < -1e-12:
-            return np.nan
-        inside = max(inside, 0.0)
-        return sign * (rval * rval / L) * np.sqrt(inside)
+        fp = float(fprime_nc_schwarzschild(np.array([rval], dtype=np.float64), M, theta)[0])
+        # dV/dr para V = f(r) * (K + L²/(2r²))
+        dVdr = fp * (kappa + (L2 / (2.0 * rval * rval))) - f * (L2 / (rval * rval * rval))
+        return dVdr / (L2 * uval * uval)
 
     for i in range(n - 1):
-        ri = r[i]
-        if not np.isfinite(ri):
-            r[i + 1 :] = np.nan
+        ui = u[i]
+        vi = up[i]
+        if not np.isfinite(ui) or not np.isfinite(vi) or ui <= 0.0:
+            u[i + 1 :] = np.nan
+            up[i + 1 :] = np.nan
             break
-        k1 = drdphi(ri)
-        if not np.isfinite(k1):
-            r[i + 1 :] = np.nan
-            break
-        k2 = drdphi(ri + 0.5 * h * k1)
-        if not np.isfinite(k2):
-            r[i + 1 :] = np.nan
-            break
-        k3 = drdphi(ri + 0.5 * h * k2)
-        if not np.isfinite(k3):
-            r[i + 1 :] = np.nan
-            break
-        k4 = drdphi(ri + h * k3)
-        if not np.isfinite(k4):
-            r[i + 1 :] = np.nan
-            break
-        r[i + 1] = ri + (h / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
 
+        k1_u = vi
+        k1_v = d2u_dphi2(ui)
+        if not np.isfinite(k1_v):
+            u[i + 1 :] = np.nan
+            up[i + 1 :] = np.nan
+            break
+
+        k2_u = vi + 0.5 * h * k1_v
+        k2_v = d2u_dphi2(ui + 0.5 * h * k1_u)
+        if not np.isfinite(k2_v):
+            u[i + 1 :] = np.nan
+            up[i + 1 :] = np.nan
+            break
+
+        k3_u = vi + 0.5 * h * k2_v
+        k3_v = d2u_dphi2(ui + 0.5 * h * k2_u)
+        if not np.isfinite(k3_v):
+            u[i + 1 :] = np.nan
+            up[i + 1 :] = np.nan
+            break
+
+        k4_u = vi + h * k3_v
+        k4_v = d2u_dphi2(ui + h * k3_u)
+        if not np.isfinite(k4_v):
+            u[i + 1 :] = np.nan
+            up[i + 1 :] = np.nan
+            break
+
+        u_next = ui + (h / 6.0) * (k1_u + 2.0 * k2_u + 2.0 * k3_u + k4_u)
+        up_next = vi + (h / 6.0) * (k1_v + 2.0 * k2_v + 2.0 * k3_v + k4_v)
+
+        if not np.isfinite(u_next) or u_next <= 0.0:
+            u[i + 1] = np.nan
+            up[i + 1] = np.nan
+            u[i + 2 :] = np.nan
+            up[i + 2 :] = np.nan
+            break
+
+        r_next = 1.0 / u_next
+        if r_next <= (1e-7 * scale):
+            u[i + 1] = np.nan
+            up[i + 1] = np.nan
+            u[i + 2 :] = np.nan
+            up[i + 2 :] = np.nan
+            break
+
+        # Só aplica corte de visualização quando a órbita já está em regime de fuga (r crescente).
+        if r_stop is not None and up_next < 0.0 and r_next >= r_stop:
+            u[i + 1] = u_next
+            up[i + 1] = up_next
+            u[i + 2 :] = np.nan
+            up[i + 2 :] = np.nan
+            break
+
+        u[i + 1] = u_next
+        up[i + 1] = up_next
+
+        if r_outer is not None and r_next <= (r_outer * 1.0005):
+            u[i + 2 :] = np.nan
+            up[i + 2 :] = np.nan
+            break
+
+    r = 1.0 / u
     return phi, r

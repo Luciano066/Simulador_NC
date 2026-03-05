@@ -26,37 +26,43 @@ def veff2_schwarzschild(r: np.ndarray, M: float, E: float, L: float, particle: s
 
     raise ValueError("particle deve ser 'massive' ou 'photon'")
 
-def _erf_approx(x: np.ndarray) -> np.ndarray:
-    # Abramowitz & Stegun 7.1.26 approximation (vectorized)
-    p = 0.3275911
-    a1 = 0.254829592
-    a2 = -0.284496736
-    a3 = 1.421413741
-    a4 = -1.453152027
-    a5 = 1.061405429
-    sign = np.sign(x)
-    ax = np.abs(x)
-    t = 1.0 / (1.0 + p * ax)
-    y = 1.0 - (((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * np.exp(-ax * ax))
-    return sign * y
+def _mass_nc(r: np.ndarray, M: float, theta: float) -> np.ndarray:
+    """
+    Massa difusa m(r) do modelo Lorentziano usado no TCC (Eq. 23).
+    """
+    sqrt_theta = np.sqrt(theta)
+    term = np.arctan(r / sqrt_theta) - (r * sqrt_theta) / (r * r + theta)
+    return (2.0 * M / np.pi) * term
 
-def _lower_gamma_3half(x: np.ndarray) -> np.ndarray:
-    x = np.clip(x, 0.0, None)
-    sqrt_x = np.sqrt(x)
-    return 0.5 * np.sqrt(np.pi) * _erf_approx(sqrt_x) - sqrt_x * np.exp(-x)
+def _mass_prime_nc(r: np.ndarray, M: float, theta: float) -> np.ndarray:
+    sqrt_theta = np.sqrt(theta)
+    return (4.0 * M * sqrt_theta * (r * r)) / (np.pi * (r * r + theta) ** 2)
 
 def f_nc_schwarzschild(r: np.ndarray, M: float, theta: float) -> np.ndarray:
-    x = (r * r) / (4.0 * theta)
-    m = (2.0 * M / np.sqrt(np.pi)) * _lower_gamma_3half(x)
+    m = _mass_nc(r, M, theta)
     return 1.0 - (2.0 * m) / r
 
-def veff2_nc_schwarzschild(r: np.ndarray, M: float, theta: float, L: float, particle: str) -> np.ndarray:
+def fprime_nc_schwarzschild(r: np.ndarray, M: float, theta: float) -> np.ndarray:
+    """
+    Derivada radial f'(r) da métrica NC inspirada em Schwarzschild.
+    """
+    m = _mass_nc(r, M, theta)
+    mp = _mass_prime_nc(r, M, theta)
+    return (2.0 * m) / (r * r) - (2.0 * mp) / r
+
+def veff_nc_schwarzschild(r: np.ndarray, M: float, theta: float, L: float, particle: str) -> np.ndarray:
+    """
+    Potencial efetivo na convenção do TCC:
+      (1/2) (dr/dλ)^2 + V_eff(r) = E
+      V_eff = f(r) * (K + L^2/(2r^2))
+    com K=1/2 (massivo) e K=0 (fóton).
+    """
     f = f_nc_schwarzschild(r, M, theta)
-    L2_over_r2 = (L * L) / (r * r)
+    L2_over_2r2 = (L * L) / (2.0 * r * r)
     if particle == "massive":
-        return f * (1.0 + L2_over_r2)
+        return f * (0.5 + L2_over_2r2)
     if particle == "photon":
-        return f * L2_over_r2
+        return f * L2_over_2r2
     raise ValueError("particle deve ser 'massive' ou 'photon'")
 
 def ueff_schwarzschild(r: np.ndarray, M: float, L: float, particle: str) -> np.ndarray:
@@ -72,3 +78,60 @@ def ueff_schwarzschild(r: np.ndarray, M: float, L: float, particle: str) -> np.n
     if particle == "photon":
         return (u * u) - 2.0 * M * (u * u * u)
     raise ValueError("particle deve ser 'massive' ou 'photon'")
+
+def nc_horizons(M: float, theta: float, n_samples: int = 6000) -> list[float]:
+    """
+    Retorna os horizontes reais (r_- e r_+, quando existirem) da métrica NC.
+    """
+    if M <= 0 or theta <= 0:
+        return []
+
+    scale = max(M, np.sqrt(theta), 1.0)
+    r_min = max(1e-6 * scale, 1e-8)
+    r_max = 30.0 * scale
+    r = np.linspace(r_min, r_max, n_samples, dtype=np.float64)
+    f = f_nc_schwarzschild(r, M, theta)
+
+    roots: list[float] = []
+
+    def bisect_root(a: float, b: float, fa: float, fb: float) -> float:
+        for _ in range(80):
+            c = 0.5 * (a + b)
+            fc = float(f_nc_schwarzschild(np.array([c], dtype=np.float64), M, theta)[0])
+            if fa * fc <= 0.0:
+                b, fb = c, fc
+            else:
+                a, fa = c, fc
+        return 0.5 * (a + b)
+
+    for i in range(len(r) - 1):
+        a = float(r[i])
+        b = float(r[i + 1])
+        fa = float(f[i])
+        fb = float(f[i + 1])
+
+        if not np.isfinite(fa) or not np.isfinite(fb):
+            continue
+
+        if abs(fa) < 1e-8:
+            roots.append(a)
+            continue
+        if fa * fb < 0.0:
+            roots.append(bisect_root(a, b, fa, fb))
+
+    roots.sort()
+    dedup: list[float] = []
+    tol = 1e-5 * scale
+    for rr in roots:
+        if not dedup or abs(rr - dedup[-1]) > tol:
+            dedup.append(rr)
+
+    if dedup:
+        return dedup
+
+    # Caso extremal: o horizonte toca f=0 sem trocar sinal.
+    idx = int(np.argmin(np.abs(f)))
+    if abs(float(f[idx])) < 2e-4:
+        return [float(r[idx])]
+
+    return []

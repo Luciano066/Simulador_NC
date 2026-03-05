@@ -11,7 +11,12 @@ from app.schemas import (
     SimulateNCRequest,
     SimulateNCResponse,
 )
-from app.core.observables import veff2_schwarzschild, ueff_schwarzschild, veff2_nc_schwarzschild
+from app.core.observables import (
+    veff2_schwarzschild,
+    ueff_schwarzschild,
+    veff_nc_schwarzschild,
+    nc_horizons,
+)
 from app.core.geodesics import orbit_u_phi, orbit_r_phi_nc
 
 router = APIRouter()
@@ -51,12 +56,14 @@ def veff(req: VeffRequest):
 
 @router.post("/veff_nc", response_model=VeffNCResponse)
 def veff_nc(req: VeffNCRequest):
+    horizons = nc_horizons(req.M, req.theta)
+    r_outer = horizons[-1] if horizons else None
     r = np.linspace(req.r_min, req.r_max, req.n, dtype=np.float64)
-    V2 = veff2_nc_schwarzschild(r=r, M=req.M, theta=req.theta, L=req.L, particle=req.particle)
+    V = veff_nc_schwarzschild(r=r, M=req.M, theta=req.theta, L=req.L, particle=req.particle)
 
     return VeffNCResponse(
         r=r.tolist(),
-        V_eff2=V2.tolist(),
+        V_eff=V.tolist(),
         meta={
             "metric": req.metric,
             "particle": req.particle,
@@ -65,7 +72,9 @@ def veff_nc(req: VeffNCRequest):
             "E": req.E,
             "L": req.L,
             "b": (req.L / req.E) if req.E != 0 else None,
-            "E2": req.E * req.E,
+            "has_horizon": bool(horizons),
+            "horizons": horizons,
+            "r_outer_horizon": r_outer,
             "n": req.n,
         },
     )
@@ -129,6 +138,14 @@ def simulate(req: SimulateRequest):
 
 @router.post("/simulate_nc", response_model=SimulateNCResponse)
 def simulate_nc(req: SimulateNCRequest):
+    horizons = nc_horizons(req.M, req.theta)
+    r_outer = horizons[-1] if horizons else None
+    if r_outer is not None and req.r0 <= r_outer:
+        raise HTTPException(
+            status_code=400,
+            detail=f"r0 deve ser > r_+ (horizonte externo). r_+={r_outer:.6g}",
+        )
+
     try:
         phi, r = orbit_r_phi_nc(
             M=req.M,
@@ -140,6 +157,8 @@ def simulate_nc(req: SimulateNCRequest):
             phi_max=req.phi_max,
             n=req.n,
             particle=req.particle,
+            r_outer_horizon=r_outer,
+            r_stop=req.r_stop,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -155,6 +174,9 @@ def simulate_nc(req: SimulateNCRequest):
         x = x[:first_invalid]
         y = y[:first_invalid]
 
+    captured = bool(r_outer is not None and len(r) > 0 and np.min(r) <= (r_outer * 1.0005))
+    clipped_by_r_stop = bool(req.r_stop is not None and len(r) > 0 and np.max(r) >= req.r_stop)
+
     return SimulateNCResponse(
         phi=phi.tolist(),
         r=r.tolist(),
@@ -166,13 +188,18 @@ def simulate_nc(req: SimulateNCRequest):
             "M": req.M,
             "theta": req.theta,
             "E": req.E,
-            "E2": req.E * req.E,
             "L": req.L,
             "b": (req.L / req.E) if req.E != 0 else None,
             "r0": req.r0,
+            "r_stop": req.r_stop,
             "radial_sign": req.radial_sign,
             "phi_max": req.phi_max,
             "n": req.n,
+            "has_horizon": bool(horizons),
+            "horizons": horizons,
+            "r_outer_horizon": r_outer,
+            "captured": captured,
+            "clipped_by_r_stop": clipped_by_r_stop,
             "points_returned": int(len(r)),
         },
     )
