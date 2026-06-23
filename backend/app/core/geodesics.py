@@ -1,11 +1,13 @@
 import numpy as np
-from scipy.integrate import solve_ivp
+from scipy.integrate import cumulative_trapezoid, solve_ivp
 
 from app.core.observables import (
     f_nc_schwarzschild,
     f_schwarzschild,
     fprime_nc_schwarzschild,
     nc_horizons,
+    potencial_foton_nc,
+    potencial_massiva_nc,
     veff_nc_schwarzschild,
 )
 
@@ -292,6 +294,131 @@ def orbit_r_phi_nc(
 
     phi, y = _append_terminal_event(sol.t, sol.y, sol.t_events, sol.y_events, include_event_indexes)
     return _finite_orbit(phi, y[0])
+
+
+def orbita_massiva_nc(
+    L: float,
+    E: float,
+    rst: float,
+    norbit: float,
+    theta: float,
+    n_points: int = 5000,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Legacy massive NC orbit from the old Streamlit simulator.
+
+    This intentionally preserves the old quadrature in u=1/r instead of solving
+    a second-order ODE, because this mode exists to reproduce old plots.
+    """
+    if L <= 0:
+        raise ValueError("L > 0")
+    if theta <= 0:
+        raise ValueError("theta > 0")
+    if rst <= 0:
+        raise ValueError("rst > 0")
+    if norbit <= 0:
+        raise ValueError("norbit > 0")
+    if n_points < 10:
+        raise ValueError("n_points >= 10")
+
+    scale = 0.5
+    u_min = scale / rst
+    u_max = min(0.5, (1.0 / np.sqrt(theta)) * 0.9)
+    if u_max <= u_min:
+        raise ValueError("Legacy massive orbit has no valid u interval. Increase rst or theta.")
+
+    n_samples = max(10, int(n_points * max(1.0, L / 3.0)))
+    u_vals = np.linspace(u_min, u_max, n_samples, dtype=np.float64)
+    r_vals_full = 1.0 / u_vals
+    Veff_full = potencial_massiva_nc(r_vals_full, L, theta)
+    discr = E - Veff_full
+
+    eps = 1.0e-10 * max(1.0, 1.0 / theta)
+    valid = np.isfinite(discr) & (discr > eps)
+    idx_valid = np.where(valid)[0]
+    if len(idx_valid) < 10:
+        raise ValueError("Legacy massive orbit has no allowed radial window for E - V_eff > 0.")
+
+    idx_last = int(idx_valid[-1])
+    u = u_vals[: idx_last + 1]
+    r_vals = 1.0 / u
+    discr = discr[: idx_last + 1]
+
+    integrand = (L / np.sqrt(2.0)) / np.sqrt(np.clip(discr, eps, None))
+    phi_raw = cumulative_trapezoid(integrand, u, initial=0.0)
+
+    if idx_last < len(u_vals) - 1:
+        phi_out = phi_raw[-1] + (phi_raw[-1] - phi_raw[::-1])
+        r_out = r_vals[::-1]
+        phi = np.concatenate([phi_raw, phi_out])
+        r = np.concatenate([r_vals, r_out])
+    else:
+        phi = phi_raw * 4.5
+        r = r_vals
+
+    V = potencial_massiva_nc(r, L, theta)
+    valid_points = np.isfinite(phi) & np.isfinite(r) & np.isfinite(V) & (r > 0.0)
+    if not np.all(valid_points):
+        first_invalid = int(np.argmax(~valid_points))
+        phi = phi[:first_invalid]
+        r = r[:first_invalid]
+        V = V[:first_invalid]
+
+    return phi, r, V
+
+
+def orbita_foton_nc(
+    b: float,
+    rst: float,
+    theta: float,
+    n_points: int = 2000,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Legacy NC photon orbit from the old Streamlit simulator.
+    """
+    if b <= 0:
+        raise ValueError("b > 0")
+    if theta <= 0:
+        raise ValueError("theta > 0")
+    if rst <= 0:
+        raise ValueError("rst > 0")
+    if n_points < 10:
+        raise ValueError("n_points >= 10")
+
+    u_min = 1.0 / rst
+    u_max = 0.5
+    if u_max <= u_min:
+        raise ValueError("Legacy photon orbit has no valid u interval. Increase rst.")
+
+    u_vals = np.linspace(u_min, u_max, n_points, dtype=np.float64)
+    Veff = potencial_foton_nc(1.0 / u_vals, theta)
+    discr = (1.0 / (b * b)) - Veff
+    valid = np.isfinite(discr) & (discr > 0.0)
+    if not np.any(valid):
+        raise ValueError("Impact parameter b is outside the allowed legacy photon window.")
+
+    last_idx = int(np.where(valid)[0][-1])
+    u = u_vals[: last_idx + 1]
+    if len(u) > 1:
+        u = np.append(u[:-1], u[-1] * 0.999)
+    else:
+        u = np.array([u[0] * 0.999], dtype=np.float64)
+
+    discr = (1.0 / (b * b)) - potencial_foton_nc(1.0 / u, theta)
+    integrand = 1.0 / np.sqrt(np.maximum(1.0e-12, discr))
+    integrand[~np.isfinite(integrand)] = 0.0
+
+    phi = cumulative_trapezoid(integrand, u, initial=0.0)
+    r = 1.0 / u
+    V = potencial_foton_nc(r, theta)
+    valid_points = np.isfinite(phi) & np.isfinite(r) & np.isfinite(V) & (r > 0.0)
+    if not np.all(valid_points):
+        first_invalid = int(np.argmax(~valid_points))
+        phi = phi[:first_invalid]
+        r = r[:first_invalid]
+        V = V[:first_invalid]
+
+    return phi, r, V
 
 
 def orbit_nc_maple(

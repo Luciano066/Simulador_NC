@@ -192,6 +192,100 @@ def test_simulate_nc_applies_r_stop_to_escape_branch() -> None:
     assert max(data["r"]) <= 125.0
 
 
+def test_veff_nc_legacy_massive_success() -> None:
+    response = client.post(
+        "/veff_nc_legacy",
+        json={
+            "metric": "nc-legacy",
+            "particle": "massive",
+            "theta": 0.05,
+            "L": 1.0,
+            "E": 0.1,
+            "b": 5.0,
+            "r_min": 0.001,
+            "n": 1000,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["r"]) == 1000
+    assert len(data["V_eff"]) == 1000
+    assert data["meta"]["mode"] == "nc-legado"
+    assert data["meta"]["rst"] == pytest.approx(12.0)
+    assert data["meta"]["V_min"] < data["meta"]["energy_level"]
+
+
+def test_simulate_nc_legacy_massive_captures_at_legacy_inner_radius() -> None:
+    response = client.post(
+        "/simulate_nc_legacy",
+        json={
+            "metric": "nc-legacy",
+            "particle": "massive",
+            "theta": 0.05,
+            "L": 1.0,
+            "E": 0.1,
+            "b": 5.0,
+            "norbit": 50.0,
+            "capture_radius": 2.0,
+            "n": 1000,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["meta"]["captured"] is True
+    assert data["meta"]["termination_reason"] == "captured"
+    assert min(data["r"]) == pytest.approx(2.0)
+    assert data["meta"]["points_returned"] == len(data["r"])
+
+
+def test_simulate_nc_legacy_photon_uses_impact_parameter_energy_level() -> None:
+    response = client.post(
+        "/simulate_nc_legacy",
+        json={
+            "metric": "nc-legacy",
+            "particle": "photon",
+            "theta": 0.05,
+            "L": 1.0,
+            "E": 0.1,
+            "b": 5.0,
+            "capture_radius": 2.0,
+            "n": 1000,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["meta"]["energy_level"] == pytest.approx(1.0 / 25.0)
+    assert data["meta"]["captured"] is True
+    assert data["meta"]["points_returned"] == len(data["r"])
+
+
+def test_veff_nc_legacy_changes_when_l_or_theta_changes() -> None:
+    payload = {
+        "metric": "nc-legacy",
+        "particle": "massive",
+        "theta": 0.05,
+        "L": 1.0,
+        "E": 0.1,
+        "b": 5.0,
+        "rst": 12.0,
+        "r_min": 0.5,
+        "r_max": 5.0,
+        "n": 200,
+    }
+    base = client.post("/veff_nc_legacy", json=payload)
+    changed_l = client.post("/veff_nc_legacy", json={**payload, "L": 2.0})
+    changed_theta = client.post("/veff_nc_legacy", json={**payload, "theta": 0.1})
+
+    assert base.status_code == 200
+    assert changed_l.status_code == 200
+    assert changed_theta.status_code == 200
+    assert base.json()["V_eff"] != changed_l.json()["V_eff"]
+    assert base.json()["V_eff"] != changed_theta.json()["V_eff"]
+
+
 def test_simulate_rejects_classically_forbidden_initial_radius() -> None:
     response = client.post(
         "/simulate",

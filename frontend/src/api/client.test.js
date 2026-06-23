@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requestJson, resolveApiBaseUrl } from "./client";
 import { simulateOrbit } from "./simulate";
+import { simulateOrbitNCLegacy } from "./simulate_nc_legacy";
 import { simulateOrbitNCMaple } from "./simulate_nc_maple";
+import { fetchVeffNCLegacy } from "./veff_nc_legacy";
 import { fetchVeffNCMaple } from "./veff_nc_maple";
 
 describe("API client", () => {
@@ -108,5 +110,43 @@ describe("API client", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(fetch.mock.calls[0][0]).toBe("http://127.0.0.1:8000/simulate_nc_maple");
     expect(fetch.mock.calls[1][0]).toBe("http://127.0.0.1:8000/veff_nc_maple");
+  });
+
+  it("faz POST para os endpoints NC legado", async () => {
+    const payload = {
+      metric: "nc-legacy",
+      particle: "massive",
+      theta: 0.05,
+      L: 1,
+      E: 0.1,
+      b: 5,
+      n: 100,
+    };
+
+    fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ phi: [], r: [], V_eff: [], x: [], y: [], meta: { mode: "nc-legado" } }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ r: [], V_eff: [], meta: { mode: "nc-legado" } }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await simulateOrbitNCLegacy(payload);
+    await fetchVeffNCLegacy(payload);
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[0][0]).toBe("http://127.0.0.1:8000/simulate_nc_legacy");
+    expect(fetch.mock.calls[1][0]).toBe("http://127.0.0.1:8000/veff_nc_legacy");
   });
 });

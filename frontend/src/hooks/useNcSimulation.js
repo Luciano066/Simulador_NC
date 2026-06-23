@@ -6,6 +6,27 @@ import { toFriendlyErrorMessage } from "../utils/errors";
 
 const API_BASE_URL = resolveApiBaseUrl();
 
+function logNcResponse(label, response) {
+  const r = response?.r ?? [];
+  const V = response?.V_eff ?? [];
+  let min = Infinity;
+  let max = -Infinity;
+  for (const value of V) {
+    if (!Number.isFinite(value)) continue;
+    min = Math.min(min, value);
+    max = Math.max(max, value);
+  }
+  console.info(`SI-NC nc-completo ${label}`, {
+    mode: "nc-completo",
+    first_r: r.length ? r[0] : null,
+    last_r: r.length ? r[r.length - 1] : null,
+    min_V: Number.isFinite(min) ? min : null,
+    max_V: Number.isFinite(max) ? max : null,
+    E: response?.meta?.E ?? null,
+    points: r.length,
+  });
+}
+
 export function useNcSimulation() {
   const [ncOrbit, setNcOrbit] = useState({
     metric: "nc-schwarzschild",
@@ -122,7 +143,7 @@ export function useNcSimulation() {
 
     setNcOrbitLoading(true);
     try {
-      const result = await simulateOrbitNC({
+      const payload = {
         metric: ncOrbit.metric,
         particle: ncOrbit.particle,
         M: ncOrbit.M,
@@ -134,7 +155,10 @@ export function useNcSimulation() {
         radial_sign: ncOrbit.radial_sign,
         phi_max: ncPhiMax,
         n: ncOrbit.n,
-      });
+      };
+      console.info("SI-NC nc-completo orbit payload", payload);
+      const result = await simulateOrbitNC(payload);
+      logNcResponse("orbit response", result);
       setNcTraj(result);
     } catch (error) {
       setNcOrbitErr(toFriendlyErrorMessage(error, API_BASE_URL, "Falha ao calcular orbita NC."));
@@ -177,7 +201,7 @@ export function useNcSimulation() {
 
     setNcPotentialLoading(true);
     try {
-      const result = await fetchVeffNC({
+      const payload = {
         metric: ncPotential.metric,
         particle: ncPotential.particle,
         M: ncPotential.M,
@@ -187,7 +211,10 @@ export function useNcSimulation() {
         r_min: ncPotential.r_min,
         r_max: ncPotential.r_max,
         n: ncPotential.n_veff,
-      });
+      };
+      console.info("SI-NC nc-completo potential payload", payload);
+      const result = await fetchVeffNC(payload);
+      logNcResponse("potential response", result);
       setNcVeff(result);
     } catch (error) {
       setNcPotentialErr(toFriendlyErrorMessage(error, API_BASE_URL, "Falha ao calcular potencial NC."));

@@ -108,6 +108,53 @@ class SimulateNCResponse(BaseModel):
     meta: dict
 
 
+class VeffNCLegacyRequest(RequestModel):
+    metric: Literal["nc-legacy"] = "nc-legacy"
+    particle: ParticleType = Field("massive", description="massive particle or photon")
+    theta: float = Field(0.05, gt=0, le=MAX_PARAMETER, description="legacy noncommutativity parameter")
+    L: float = Field(1.0, gt=0, le=MAX_PARAMETER, description="legacy angular momentum for massive particles")
+    E: float = Field(0.1, ge=-MAX_PARAMETER, le=MAX_PARAMETER, description="legacy energy line for massive particles")
+    b: float = Field(5.0, gt=0, le=MAX_PARAMETER, description="legacy photon impact parameter")
+    rst: Optional[float] = Field(None, gt=0, le=MAX_RADIUS, description="legacy outer radius scale")
+    r_min: float = Field(0.001, gt=0, le=MAX_RADIUS)
+    r_max: Optional[float] = Field(None, gt=0, le=MAX_RADIUS)
+    n: int = Field(50_000, ge=10, le=MAX_POINTS)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> Self:
+        if self.r_max is not None and self.r_max <= self.r_min:
+            raise ValueError("r_max must be greater than r_min")
+        return self
+
+
+class VeffNCLegacyResponse(BaseModel):
+    r: List[float]
+    V_eff: List[float]
+    meta: dict
+
+
+class SimulateNCLegacyRequest(RequestModel):
+    metric: Literal["nc-legacy"] = "nc-legacy"
+    particle: ParticleType = Field("massive", description="massive particle or photon")
+    theta: float = Field(0.05, gt=0, le=MAX_PARAMETER, description="legacy noncommutativity parameter")
+    L: float = Field(1.0, gt=0, le=MAX_PARAMETER, description="legacy angular momentum for massive particles")
+    E: float = Field(0.1, ge=-MAX_PARAMETER, le=MAX_PARAMETER, description="legacy energy for massive particles")
+    b: float = Field(5.0, gt=0, le=MAX_PARAMETER, description="legacy photon impact parameter")
+    rst: Optional[float] = Field(None, gt=0, le=MAX_RADIUS, description="legacy outer radius scale")
+    norbit: float = Field(50.0, gt=0, le=MAX_PARAMETER, description="legacy orbit scale parameter")
+    capture_radius: float = Field(2.0, gt=0, le=MAX_RADIUS, description="legacy visual capture radius")
+    n: int = Field(5000, ge=100, le=MAX_POINTS)
+
+
+class SimulateNCLegacyResponse(BaseModel):
+    phi: List[float]
+    r: List[float]
+    V_eff: List[float]
+    x: List[float]
+    y: List[float]
+    meta: dict
+
+
 class VeffNCMapleRequest(RequestModel):
     metric: Literal["nc-maple"] = "nc-maple"
     m: float = Field(0.1, gt=0, le=MAX_PARAMETER, description="Maple/TCC mass parameter")

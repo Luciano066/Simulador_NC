@@ -3,11 +3,15 @@ import pytest
 
 from app.core.config import get_cors_origins
 from app.core.observables import (
+    critical_points_legacy,
     energy_nc_maple,
     f_nc_maple,
     f_schwarzschild,
+    legacy_rst_massive,
     nc_horizons,
     nc_maple_horizons,
+    potencial_foton_nc,
+    potencial_massiva_nc,
     veff2_schwarzschild,
     veff_nc_maple,
 )
@@ -120,3 +124,42 @@ def test_maple_orbit_equation_matches_plotted_potential_derivative() -> None:
     )
 
     assert ode_acceleration == pytest.approx(-numerical_dvdu / (L * L), rel=1e-6, abs=1e-8)
+
+
+def test_legacy_massive_nc_potential_matches_old_simulator_formula() -> None:
+    r = np.array([0.5, 1.0, 2.0])
+    L = 1.7
+    theta = 0.05
+    u = 1.0 / r
+
+    expected = -u + 0.5 * L * L * u * u - L * L * u**3 + (8.0 * np.sqrt(theta) / np.pi) * L * L * u**4
+
+    assert potencial_massiva_nc(r, L=L, theta=theta) == pytest.approx(expected)
+
+
+def test_legacy_photon_nc_potential_matches_old_simulator_formula() -> None:
+    r = np.array([1.0, 2.0, 5.0])
+    theta = 0.05
+    sqrt_theta = np.sqrt(theta)
+    u = 1.0 / r
+    term = 1.0 - (4.0 / np.pi) * (np.arctan(r / sqrt_theta) - (r * sqrt_theta) / (r * r + theta))
+    expected = term * u * u - 2.0 * u**3
+
+    assert potencial_foton_nc(r, theta=theta) == pytest.approx(expected)
+
+
+def test_legacy_rst_massive_uses_streamlit_table() -> None:
+    assert legacy_rst_massive(0.5) == pytest.approx(10.0)
+    assert legacy_rst_massive(1.0) == pytest.approx(12.0)
+    assert legacy_rst_massive(3.0) == pytest.approx(70.0 / 3.0)
+    assert legacy_rst_massive(10.0) == pytest.approx(100.0)
+
+
+def test_legacy_critical_points_detects_old_plot_minimum() -> None:
+    r = np.linspace(0.001, 12.0, 5000)
+    V = potencial_massiva_nc(r, L=1.0, theta=0.05)
+
+    points = critical_points_legacy(r, V)
+
+    assert len(points["minima"]) >= 1
+    assert points["minima"][0]["V_eff"] < 0.0

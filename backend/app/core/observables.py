@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.signal import find_peaks
 
 def f_schwarzschild(r: np.ndarray, M: float) -> np.ndarray:
     return 1.0 - (2.0 * M) / r
@@ -64,6 +65,83 @@ def veff_nc_schwarzschild(r: np.ndarray, M: float, theta: float, L: float, parti
     if particle == "photon":
         return f * L2_over_2r2
     raise ValueError("particle deve ser 'massive' ou 'photon'")
+
+
+def legacy_rst_massive(L: float) -> float:
+    """
+    Radius scale used by the old Streamlit simulator for massive NC orbits.
+
+    The legacy UI chose a multiplier s from L and then used rst = s / L.
+    """
+    if L <= 0:
+        raise ValueError("L > 0")
+
+    if L < 0.6:
+        s = 5.0
+    elif L < 2.9:
+        s = 12.0
+    elif L < 3.9:
+        s = 70.0
+    elif L <= 4.8:
+        s = 100.0
+    elif L < 5.9:
+        s = 200.0
+    elif L < 6.9:
+        s = 300.0
+    elif L < 7.9:
+        s = 450.0
+    elif L < 8.4:
+        s = 550.0
+    elif L < 9.9:
+        s = 850.0
+    else:
+        s = 1000.0
+
+    return s / L
+
+
+def potencial_massiva_nc(r: np.ndarray, L: float, theta: float) -> np.ndarray:
+    """
+    Legacy polynomial NC effective potential for massive particles.
+
+    V(r) = -u + 0.5 L^2 u^2 - L^2 u^3 + (8 sqrt(theta)/pi) L^2 u^4,
+    with u = 1/r.
+    """
+    u = 1.0 / r
+    return -u + 0.5 * L * L * u * u - L * L * u**3 + (8.0 * np.sqrt(theta) / np.pi) * L * L * u**4
+
+
+def potencial_foton_nc(r: np.ndarray, theta: float) -> np.ndarray:
+    """
+    Legacy NC photon effective potential from the old simulator.
+    """
+    sqrt_theta = np.sqrt(theta)
+    u = 1.0 / r
+    term = 1.0 - (4.0 / np.pi) * (np.arctan(r / sqrt_theta) - (r * sqrt_theta) / (r * r + theta))
+    return term * u * u - 2.0 * u**3
+
+
+def critical_points_legacy(r: np.ndarray, V: np.ndarray, distance: int = 10) -> dict[str, list[dict[str, float]]]:
+    """
+    Peak detection compatible with the old Streamlit plot.
+    """
+    finite = np.isfinite(r) & np.isfinite(V)
+    r_finite = r[finite]
+    V_finite = V[finite]
+    if len(r_finite) < 3:
+        return {"maxima": [], "minima": []}
+
+    maxima_ids, _ = find_peaks(V_finite, distance=distance)
+    minima_ids, _ = find_peaks(-V_finite, distance=distance)
+
+    def serialize(indexes: np.ndarray) -> list[dict[str, float]]:
+        return [
+            {"r": float(r_finite[index]), "V_eff": float(V_finite[index])}
+            for index in indexes
+            if np.isfinite(r_finite[index]) and np.isfinite(V_finite[index])
+        ]
+
+    return {"maxima": serialize(maxima_ids), "minima": serialize(minima_ids)}
 
 
 def f_nc_maple(r: np.ndarray, m: float, theta: float) -> np.ndarray:

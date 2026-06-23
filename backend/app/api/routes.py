@@ -12,6 +12,10 @@ from app.schemas import (
     VeffNCResponse,
     SimulateNCRequest,
     SimulateNCResponse,
+    VeffNCLegacyRequest,
+    VeffNCLegacyResponse,
+    SimulateNCLegacyRequest,
+    SimulateNCLegacyResponse,
     VeffNCMapleRequest,
     VeffNCMapleResponse,
     SimulateNCMapleRequest,
@@ -19,17 +23,36 @@ from app.schemas import (
 )
 from app.core.observables import (
     energy_nc_maple,
+    critical_points_legacy,
+    legacy_rst_massive,
     nc_maple_horizons,
+    potencial_foton_nc,
+    potencial_massiva_nc,
     veff2_schwarzschild,
     veff_nc_maple as veff_nc_maple_observable,
     ueff_schwarzschild,
     veff_nc_schwarzschild,
     nc_horizons,
 )
-from app.core.geodesics import orbit_nc_maple, orbit_u_phi, orbit_r_phi_nc
+from app.core.geodesics import orbit_nc_maple, orbit_u_phi, orbit_r_phi_nc, orbita_foton_nc, orbita_massiva_nc
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
+
+
+def _finite_min_max(values: np.ndarray) -> tuple[float | None, float | None]:
+    finite = values[np.isfinite(values)]
+    if len(finite) == 0:
+        return None, None
+    return float(np.min(finite)), float(np.max(finite))
+
+
+def _legacy_rst(particle: str, L: float, rst: float | None) -> float:
+    if rst is not None:
+        return rst
+    if particle == "massive":
+        return legacy_rst_massive(L)
+    return 50.0
 
 @router.get("/health")
 def health():
@@ -66,10 +89,21 @@ def veff(req: VeffRequest):
 
 @router.post("/veff_nc", response_model=VeffNCResponse)
 def veff_nc(req: VeffNCRequest):
+    logger.info("nc-completo potential payload=%s", req.model_dump())
     horizons = nc_horizons(req.M, req.theta)
     r_outer = horizons[-1] if horizons else None
     r = np.linspace(req.r_min, req.r_max, req.n, dtype=np.float64)
     V = veff_nc_schwarzschild(r=r, M=req.M, theta=req.theta, L=req.L, particle=req.particle)
+    v_min, v_max = _finite_min_max(V)
+    logger.info(
+        "nc-completo potential first_r=%s last_r=%s min_V=%s max_V=%s E=%s points=%s",
+        float(r[0]),
+        float(r[-1]),
+        v_min,
+        v_max,
+        req.E,
+        len(r),
+    )
 
     return VeffNCResponse(
         r=r.tolist(),
@@ -86,6 +120,59 @@ def veff_nc(req: VeffNCRequest):
             "horizons": horizons,
             "r_outer_horizon": r_outer,
             "n": req.n,
+        },
+    )
+
+
+@router.post("/veff_nc_legacy", response_model=VeffNCLegacyResponse)
+def veff_nc_legacy(req: VeffNCLegacyRequest):
+    logger.info("nc-legado potential payload=%s", req.model_dump())
+    rst = _legacy_rst(req.particle, req.L, req.rst)
+    r_max = req.r_max if req.r_max is not None else rst
+    if r_max <= req.r_min:
+        raise HTTPException(status_code=400, detail="r_max/rst must be greater than r_min")
+
+    r = np.linspace(req.r_min, r_max, req.n, dtype=np.float64)
+    if req.particle == "massive":
+        V = potencial_massiva_nc(r, req.L, req.theta)
+        energy_level = req.E
+    elif req.particle == "photon":
+        V = potencial_foton_nc(r, req.theta)
+        energy_level = 1.0 / (req.b * req.b)
+    else:
+        raise HTTPException(status_code=400, detail="particle must be massive or photon")
+
+    critical_points = critical_points_legacy(r, V)
+    v_min, v_max = _finite_min_max(V)
+    logger.info(
+        "nc-legado potential first_r=%s last_r=%s min_V=%s max_V=%s E=%s points=%s",
+        float(r[0]),
+        float(r[-1]),
+        v_min,
+        v_max,
+        energy_level,
+        len(r),
+    )
+
+    return VeffNCLegacyResponse(
+        r=r.tolist(),
+        V_eff=V.tolist(),
+        meta={
+            "metric": req.metric,
+            "mode": "nc-legado",
+            "particle": req.particle,
+            "theta": req.theta,
+            "L": req.L,
+            "E": req.E,
+            "b": req.b,
+            "energy_level": energy_level,
+            "rst": rst,
+            "r_min": req.r_min,
+            "r_max": r_max,
+            "n": req.n,
+            "V_min": v_min,
+            "V_max": v_max,
+            "critical_points": critical_points,
         },
     )
 
@@ -186,6 +273,7 @@ def simulate(req: SimulateRequest):
 
 @router.post("/simulate_nc", response_model=SimulateNCResponse)
 def simulate_nc(req: SimulateNCRequest):
+    logger.info("nc-completo orbit payload=%s", req.model_dump())
     horizons = nc_horizons(req.M, req.theta)
     r_outer = horizons[-1] if horizons else None
     if r_outer is not None and req.r0 <= r_outer:
@@ -225,14 +313,18 @@ def simulate_nc(req: SimulateNCRequest):
     captured = bool(r_outer is not None and len(r) > 0 and np.min(r) <= (r_outer * 1.0005))
     clipped_by_r_stop = bool(req.r_stop is not None and len(r) > 0 and np.max(r) >= req.r_stop)
     termination_reason = "captured" if captured else "r_stop" if clipped_by_r_stop else "phi_max"
+    first_r = float(r[0]) if len(r) else None
+    last_r = float(r[-1]) if len(r) else None
     logger.info(
-        "simulate_nc termination=%s M=%s theta=%s E=%s L=%s r0=%s points=%s",
+        "simulate_nc termination=%s M=%s theta=%s E=%s L=%s r0=%s first_r=%s last_r=%s points=%s",
         termination_reason,
         req.M,
         req.theta,
         req.E,
         req.L,
         req.r0,
+        first_r,
+        last_r,
         len(r),
     )
 
@@ -261,6 +353,95 @@ def simulate_nc(req: SimulateNCRequest):
             "clipped_by_r_stop": clipped_by_r_stop,
             "termination_reason": termination_reason,
             "points_returned": int(len(r)),
+        },
+    )
+
+
+@router.post("/simulate_nc_legacy", response_model=SimulateNCLegacyResponse)
+def simulate_nc_legacy(req: SimulateNCLegacyRequest):
+    logger.info("nc-legado orbit payload=%s", req.model_dump())
+    rst = _legacy_rst(req.particle, req.L, req.rst)
+
+    try:
+        if req.particle == "massive":
+            phi, r, V = orbita_massiva_nc(
+                L=req.L,
+                E=req.E,
+                rst=rst,
+                norbit=req.norbit,
+                theta=req.theta,
+                n_points=req.n,
+            )
+            energy_level = req.E
+        elif req.particle == "photon":
+            phi, r, V = orbita_foton_nc(
+                b=req.b,
+                rst=rst,
+                theta=req.theta,
+                n_points=req.n,
+            )
+            energy_level = 1.0 / (req.b * req.b)
+        else:
+            raise ValueError("particle must be massive or photon")
+    except ValueError as exc:
+        logger.warning("simulate_nc_legacy failed: %s", exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    x = r * np.cos(phi)
+    y = r * np.sin(phi)
+
+    valid = np.isfinite(phi) & np.isfinite(r) & np.isfinite(V) & np.isfinite(x) & np.isfinite(y)
+    if not np.all(valid):
+        first_invalid = int(np.argmax(~valid))
+        phi = phi[:first_invalid]
+        r = r[:first_invalid]
+        V = V[:first_invalid]
+        x = x[:first_invalid]
+        y = y[:first_invalid]
+
+    captured = bool(len(r) > 0 and np.min(r) <= (req.capture_radius * 1.002))
+    returned = bool(len(r) > 2 and not captured and abs(float(r[-1]) - float(r[0])) <= max(1.0e-6, 0.01 * rst))
+    termination_reason = "captured" if captured else "turning_point" if returned else "u_max"
+    v_min, v_max = _finite_min_max(V)
+    first_r = float(r[0]) if len(r) else None
+    last_r = float(r[-1]) if len(r) else None
+    logger.info(
+        "nc-legado orbit termination=%s first_r=%s last_r=%s min_V=%s max_V=%s E=%s points=%s",
+        termination_reason,
+        first_r,
+        last_r,
+        v_min,
+        v_max,
+        energy_level,
+        len(r),
+    )
+
+    return SimulateNCLegacyResponse(
+        phi=phi.tolist(),
+        r=r.tolist(),
+        V_eff=V.tolist(),
+        x=x.tolist(),
+        y=y.tolist(),
+        meta={
+            "metric": req.metric,
+            "mode": "nc-legado",
+            "particle": req.particle,
+            "theta": req.theta,
+            "L": req.L,
+            "E": req.E,
+            "b": req.b,
+            "energy_level": energy_level,
+            "rst": rst,
+            "norbit": req.norbit,
+            "capture_radius": req.capture_radius,
+            "captured": captured,
+            "returned": returned,
+            "termination_reason": termination_reason,
+            "points_returned": int(len(r)),
+            "first_r": first_r,
+            "last_r": last_r,
+            "V_min": v_min,
+            "V_max": v_max,
         },
     )
 

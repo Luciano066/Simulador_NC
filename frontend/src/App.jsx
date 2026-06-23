@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Header } from "./components/Header";
+import { LegacyNcOrbitPlot } from "./components/LegacyNcOrbitPlot";
+import { LegacyNcParameterPanel } from "./components/LegacyNcParameterPanel";
+import { LegacyNcPotentialPlot } from "./components/LegacyNcPotentialPlot";
 import { MapleOrbitPlot } from "./components/MapleOrbitPlot";
 import { MapleParameterPanel } from "./components/MapleParameterPanel";
 import { MaplePotentialPlot } from "./components/MaplePotentialPlot";
@@ -9,6 +12,7 @@ import { NcPotentialPlot } from "./components/NcPotentialPlot";
 import { OrbitPlot } from "./components/OrbitPlot";
 import { ParameterPanel } from "./components/ParameterPanel";
 import { PotentialPlot } from "./components/PotentialPlot";
+import { useLegacyNcSimulation } from "./hooks/useLegacyNcSimulation";
 import { useMapleSimulation } from "./hooks/useMapleSimulation";
 import { useNcSimulation } from "./hooks/useNcSimulation";
 import { useSchwarzschildSimulation } from "./hooks/useSchwarzschildSimulation";
@@ -18,6 +22,7 @@ export default function App() {
   const schwarzschild = useSchwarzschildSimulation();
   const nc = useNcSimulation();
   const maple = useMapleSimulation();
+  const legacy = useLegacyNcSimulation();
 
   useEffect(() => {
     document.body.classList.toggle("dark-mode", darkMode);
@@ -174,6 +179,36 @@ export default function App() {
 
       <MaplePotentialPlot
         mapleVeff={maple.mapleVeff}
+        plotTheme={plotTheme}
+        baseLayout={baseLayout}
+        axisBase={axisBase}
+      />
+
+      <LegacyNcParameterPanel
+        legacyParams={legacy.legacyParams}
+        legacyTraj={legacy.legacyTraj}
+        legacyVeff={legacy.legacyVeff}
+        setLegacyNum={legacy.setLegacyNum}
+        setLegacyStr={legacy.setLegacyStr}
+        setLegacyBool={legacy.setLegacyBool}
+        applyLegacyPreset={legacy.applyLegacyPreset}
+        runLegacyOrbit={legacy.runLegacyOrbit}
+        runLegacyPotential={legacy.runLegacyPotential}
+        legacyOrbitLoading={legacy.legacyOrbitLoading}
+        legacyPotentialLoading={legacy.legacyPotentialLoading}
+        legacyOrbitErr={legacy.legacyOrbitErr}
+        legacyPotentialErr={legacy.legacyPotentialErr}
+      />
+
+      <LegacyNcOrbitPlot
+        legacyTraj={legacy.legacyTraj}
+        plotTheme={plotTheme}
+        baseLayout={baseLayout}
+        axisBase={axisBase}
+      />
+
+      <LegacyNcPotentialPlot
+        legacyVeff={legacy.legacyVeff}
         plotTheme={plotTheme}
         baseLayout={baseLayout}
         axisBase={axisBase}
