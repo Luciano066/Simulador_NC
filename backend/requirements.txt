@@ -2,3 +2,4 @@ fastapi==0.115.0
 uvicorn[standard]==0.30.6
 numpy>=2.4,<2.5
 pydantic>=2.12,<2.13
+scipy>=1.14,<1.17

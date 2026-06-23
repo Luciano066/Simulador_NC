@@ -18,6 +18,14 @@ Use `backend/.env.example` como referencia.
 
 - `CORS_ORIGINS`: lista separada por virgula com origens permitidas.
   - Exemplo: `http://localhost:5173,http://127.0.0.1:5173`
+- `APP_ENV`: use `production` em producao. Nesse modo, `CORS_ORIGINS` deve ser
+  definido explicitamente e nao pode usar `*`.
+
+## Convencoes fisicas
+
+As unidades naturais, definicoes de `M`, `L`, `E`, `b`, `theta`, particulas
+massivas/fotons e a diferenca entre `V_eff`, `V_eff^2`, `E` e `E^2` estao
+documentadas em [`docs/physics_conventions.md`](docs/physics_conventions.md).
 
 ## Testes
 

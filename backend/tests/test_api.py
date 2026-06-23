@@ -96,7 +96,7 @@ def test_simulate_nc_invalid_params() -> None:
     )
 
     assert response.status_code == 400
-    assert "Parâmetros proibidos em r0" in response.json()["detail"]
+    assert "Forbidden parameters at r0" in response.json()["detail"]
 
 
 def test_veff_nc_success() -> None:
@@ -189,3 +189,41 @@ def test_simulate_nc_applies_r_stop_to_escape_branch() -> None:
     data = response.json()
     assert data["meta"]["clipped_by_r_stop"] is True
     assert max(data["r"]) <= 125.0
+
+
+def test_simulate_rejects_classically_forbidden_initial_radius() -> None:
+    response = client.post(
+        "/simulate",
+        json={
+            "metric": "schwarzschild",
+            "particle": "massive",
+            "M": 1.0,
+            "E": 0.9,
+            "L": 4.2,
+            "r0": 20.0,
+            "radial_sign": "in",
+            "phi_max": 37.69911184,
+            "n": 4000,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "E^2" in response.json()["detail"]
+
+
+def test_rejects_excessive_response_points() -> None:
+    response = client.post(
+        "/veff",
+        json={
+            "metric": "schwarzschild",
+            "particle": "massive",
+            "M": 1.0,
+            "E": 1.0,
+            "L": 4.2,
+            "r_min": 2.2,
+            "r_max": 50.0,
+            "n": 50001,
+        },
+    )
+
+    assert response.status_code == 422
