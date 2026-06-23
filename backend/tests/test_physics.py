@@ -96,3 +96,27 @@ def test_maple_horizons_are_roots_of_approximate_metric() -> None:
     values = f_nc_maple(np.array(horizons), m=0.1, theta=0.001)
     assert values[0] == pytest.approx(0.0, abs=1e-12)
     assert values[1] == pytest.approx(0.0, abs=1e-12)
+
+
+def test_maple_orbit_equation_matches_plotted_potential_derivative() -> None:
+    m = 0.1
+    theta = 0.001
+    kappa = 0.5
+    L = 2.0
+    u = 1.7
+    h = 1e-6
+
+    def potential_of_u(u_value: float) -> float:
+        r = np.array([1.0 / u_value])
+        return float(veff_nc_maple(r, m=m, theta=theta, kappa=kappa, L=L)[0])
+
+    numerical_dvdu = (potential_of_u(u + h) - potential_of_u(u - h)) / (2.0 * h)
+    sqrt_theta = np.sqrt(theta)
+    ode_acceleration = (
+        (2.0 * m * kappa) / (L * L)
+        + 3.0 * m * u * u
+        - (16.0 * m * sqrt_theta * u * u * u) / np.pi
+        - u * (1.0 + (16.0 * m * sqrt_theta * kappa) / (np.pi * L * L))
+    )
+
+    assert ode_acceleration == pytest.approx(-numerical_dvdu / (L * L), rel=1e-6, abs=1e-8)

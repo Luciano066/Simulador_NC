@@ -16,6 +16,8 @@ const PRESETS = {
     u0: 1.0,
     du0: 2.09862,
     phi_max: 2 * Math.PI,
+    r_stop: 3.0,
+    capture_radius: 0.1,
     r_min: 0.1,
     r_max: 2.0,
     n: 4000,
@@ -30,6 +32,8 @@ const PRESETS = {
     u0: 1.0,
     du0: 1.3,
     phi_max: 2 * Math.PI,
+    r_stop: 3.0,
+    capture_radius: 0.1,
     r_min: 0.1,
     r_max: 2.0,
     n: 4000,
@@ -84,6 +88,14 @@ export function useMapleSimulation() {
       setMapleOrbitErr("phi_max invalido. Use phi_max > 0.");
       return;
     }
+    if (!Number.isFinite(mapleParams.r_stop) || mapleParams.r_stop <= 0) {
+      setMapleOrbitErr("r_stop invalido. Use r_stop > 0.");
+      return;
+    }
+    if (!Number.isFinite(mapleParams.capture_radius) || mapleParams.capture_radius <= 0) {
+      setMapleOrbitErr("Raio de captura invalido. Use capture_radius > 0.");
+      return;
+    }
     if (!Number.isFinite(mapleParams.n) || mapleParams.n < 100) {
       setMapleOrbitErr("Numero de pontos da orbita invalido. Use n >= 100.");
       return;
@@ -100,6 +112,8 @@ export function useMapleSimulation() {
         u0: mapleParams.u0,
         du0: mapleParams.du0,
         phi_max: mapleParams.phi_max,
+        r_stop: mapleParams.r_stop,
+        capture_radius: mapleParams.capture_radius,
         n: mapleParams.n,
       });
       setMapleTraj(result);

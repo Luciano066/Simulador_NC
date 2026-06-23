@@ -102,6 +102,8 @@ export function MapleOrbitPlot({ mapleTraj, plotTheme, baseLayout, axisBase }) {
             points_returned: <strong>{mapleTraj.meta.points_returned}</strong>
             {" | "}points_plotted: <strong>{xPlot.length}</strong>
             {" | "}captured: <strong>{String(Boolean(mapleTraj.meta.captured))}</strong>
+            {" | "}r_stop: <strong>{String(Boolean(mapleTraj.meta.clipped_by_r_stop))}</strong>
+            {" | "}fim: <strong>{mapleTraj.meta.termination_reason ?? "phi_max"}</strong>
           </div>
         )}
 

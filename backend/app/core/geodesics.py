@@ -303,6 +303,9 @@ def orbit_nc_maple(
     du0: float,
     phi_max: float,
     n: int,
+    r_outer_horizon: float | None = None,
+    r_stop: float | None = None,
+    capture_radius: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Integrate the Maple/TCC approximate timelike NC equation directly in u(phi).
@@ -321,13 +324,21 @@ def orbit_nc_maple(
         raise ValueError("phi_max > 0")
     if n < 10:
         raise ValueError("n >= 10")
+    if r_stop is not None and r_stop <= 0:
+        raise ValueError("r_stop > 0")
+    if capture_radius is not None and capture_radius <= 0:
+        raise ValueError("capture_radius > 0")
 
     L2 = L * L
     sqrt_theta = np.sqrt(theta)
     linear_factor = 1.0 + (16.0 * m * sqrt_theta * kappa) / (np.pi * L2)
+    capture_candidates = [value for value in (r_outer_horizon, capture_radius) if value is not None]
+    r_capture = max(capture_candidates) if capture_candidates else None
 
     def rhs(_phi: float, y: np.ndarray) -> list[float]:
         u_val, up_val = float(y[0]), float(y[1])
+        if not np.isfinite(u_val) or not np.isfinite(up_val):
+            raise ValueError("Maple orbit integration reached nonfinite state values")
         source = (2.0 * m * kappa) / L2 + 3.0 * m * u_val * u_val
         correction = (16.0 * m * sqrt_theta * u_val * u_val * u_val) / np.pi
         return [up_val, source - correction - linear_factor * u_val]
@@ -335,8 +346,42 @@ def orbit_nc_maple(
     def nonpositive_u_event(_phi: float, y: np.ndarray) -> float:
         return float(y[0])
 
+    def nonfinite_event(_phi: float, y: np.ndarray) -> float:
+        return 1.0 if np.all(np.isfinite(y)) else 0.0
+
     nonpositive_u_event.terminal = True
     nonpositive_u_event.direction = -1
+    nonfinite_event.terminal = True
+    nonfinite_event.direction = -1
+
+    events = [nonpositive_u_event, nonfinite_event]
+    include_event_indexes: set[int] = set()
+
+    if r_capture is not None:
+
+        def horizon_crossing_event(_phi: float, y: np.ndarray) -> float:
+            u_val = float(y[0])
+            if u_val <= 0.0 or not np.isfinite(u_val):
+                return -1.0
+            return (1.0 / u_val) - r_capture
+
+        horizon_crossing_event.terminal = True
+        horizon_crossing_event.direction = -1
+        include_event_indexes.add(len(events))
+        events.append(horizon_crossing_event)
+
+    if r_stop is not None:
+
+        def r_stop_event(_phi: float, y: np.ndarray) -> float:
+            u_val, up_val = float(y[0]), float(y[1])
+            if u_val <= 0.0 or not np.isfinite(u_val) or up_val >= 0.0:
+                return 1.0
+            return r_stop - (1.0 / u_val)
+
+        r_stop_event.terminal = True
+        r_stop_event.direction = -1
+        include_event_indexes.add(len(events))
+        events.append(r_stop_event)
 
     phi_eval = np.linspace(0.0, phi_max, n, dtype=np.float64)
     sol = solve_ivp(
@@ -344,7 +389,7 @@ def orbit_nc_maple(
         (0.0, phi_max),
         [u0, du0],
         t_eval=phi_eval,
-        events=[nonpositive_u_event],
+        events=events,
         rtol=RTOL,
         atol=ATOL,
     )
@@ -352,8 +397,8 @@ def orbit_nc_maple(
     if not sol.success and all(len(times) == 0 for times in sol.t_events):
         raise ValueError(f"Maple orbit integration failed: {sol.message}")
 
-    phi = sol.t
-    u = sol.y[0]
+    phi, y = _append_terminal_event(sol.t, sol.y, sol.t_events, sol.y_events, include_event_indexes)
+    u = y[0]
     valid = np.isfinite(phi) & np.isfinite(u) & (u > 0.0)
     if not np.all(valid):
         first_invalid = int(np.argmax(~valid))

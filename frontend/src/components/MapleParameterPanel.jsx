@@ -81,6 +81,30 @@ export function MapleParameterPanel({
             </label>
 
             <label className="field">
+              r_stop
+              <input
+                className="css-input"
+                type="number"
+                step="0.1"
+                value={mapleParams.r_stop}
+                onChange={setMapleNum("r_stop")}
+              />
+              <small>Corte de escape para r crescente</small>
+            </label>
+
+            <label className="field">
+              Raio de captura
+              <input
+                className="css-input"
+                type="number"
+                step="0.01"
+                value={mapleParams.capture_radius}
+                onChange={setMapleNum("capture_radius")}
+              />
+              <small>Usado quando nao houver horizonte externo maior</small>
+            </label>
+
+            <label className="field">
               Pontos da orbita (n)
               <input className="css-input" type="number" step="100" value={mapleParams.n} onChange={setMapleNum("n")} />
             </label>
@@ -138,6 +162,9 @@ export function MapleParameterPanel({
           {" | "}phi_max = <strong>{mapleParams.phi_max.toFixed(3)}</strong>
           {Number.isFinite(energy) ? <>{" | "}E = <strong>{Number(energy).toFixed(6)}</strong></> : null}
           {Number.isFinite(outerHorizon) ? <>{" | "}r+ ~= <strong>{Number(outerHorizon).toFixed(6)}</strong></> : null}
+          {mapleTraj?.meta?.termination_reason ? (
+            <>{" | "}fim: <strong>{mapleTraj.meta.termination_reason}</strong></>
+          ) : null}
         </div>
 
         <ErrorMessage label="Orbita Maple/TCC" message={mapleOrbitErr} />

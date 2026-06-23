@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -241,6 +242,8 @@ def test_simulate_nc_maple_success() -> None:
             "u0": 1.0,
             "du0": 2.09862,
             "phi_max": 6.283185307179586,
+            "r_stop": 3.0,
+            "capture_radius": 0.1,
             "n": 1000,
         },
     )
@@ -251,7 +254,34 @@ def test_simulate_nc_maple_success() -> None:
     assert len(data["u"]) == len(data["r"])
     assert data["meta"]["E"] > 0
     assert data["meta"]["has_horizon"] is True
+    assert data["meta"]["termination_reason"] == "phi_max"
     assert data["meta"]["points_returned"] == len(data["r"])
+
+
+def test_simulate_nc_maple_captures_when_crossing_horizon() -> None:
+    response = client.post(
+        "/simulate_nc_maple",
+        json={
+            "metric": "nc-maple",
+            "m": 0.1,
+            "theta": 0.001,
+            "kappa": 0.5,
+            "L": 2.0,
+            "u0": 1.0,
+            "du0": 2.5,
+            "phi_max": 6.283185307179586,
+            "r_stop": 3.0,
+            "capture_radius": 0.1,
+            "n": 1000,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["meta"]["captured"] is True
+    assert data["meta"]["termination_reason"] == "captured"
+    assert data["meta"]["points_returned"] < 1000
+    assert min(data["r"]) == pytest.approx(data["meta"]["capture_radius_effective"])
 
 
 def test_veff_nc_maple_success() -> None:
@@ -276,3 +306,28 @@ def test_veff_nc_maple_success() -> None:
     assert len(data["r"]) == 1000
     assert len(data["V_eff"]) == 1000
     assert data["meta"]["E"] > 0
+
+
+def test_simulate_nc_maple_applies_r_stop_on_escape_branch() -> None:
+    response = client.post(
+        "/simulate_nc_maple",
+        json={
+            "metric": "nc-maple",
+            "m": 0.1,
+            "theta": 0.001,
+            "kappa": 0.5,
+            "L": 2.0,
+            "u0": 1.0,
+            "du0": -0.8,
+            "phi_max": 6.283185307179586,
+            "r_stop": 1.4,
+            "capture_radius": 0.1,
+            "n": 1000,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["meta"]["clipped_by_r_stop"] is True
+    assert data["meta"]["termination_reason"] == "r_stop"
+    assert max(data["r"]) == pytest.approx(1.4)

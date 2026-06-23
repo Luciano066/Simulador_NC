@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 from fastapi import APIRouter, HTTPException
 
@@ -27,6 +29,7 @@ from app.core.observables import (
 from app.core.geodesics import orbit_nc_maple, orbit_u_phi, orbit_r_phi_nc
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router.get("/health")
 def health():
@@ -115,6 +118,7 @@ def veff_nc_maple(req: VeffNCMapleRequest):
             "du0": req.du0,
             "r0": 1.0 / req.u0,
             "E": energy,
+            "capture_radius": 0.1,
             "has_horizon": bool(horizons),
             "horizons": horizons,
             "r_outer_horizon": r_outer,
@@ -220,6 +224,17 @@ def simulate_nc(req: SimulateNCRequest):
 
     captured = bool(r_outer is not None and len(r) > 0 and np.min(r) <= (r_outer * 1.0005))
     clipped_by_r_stop = bool(req.r_stop is not None and len(r) > 0 and np.max(r) >= req.r_stop)
+    termination_reason = "captured" if captured else "r_stop" if clipped_by_r_stop else "phi_max"
+    logger.info(
+        "simulate_nc termination=%s M=%s theta=%s E=%s L=%s r0=%s points=%s",
+        termination_reason,
+        req.M,
+        req.theta,
+        req.E,
+        req.L,
+        req.r0,
+        len(r),
+    )
 
     return SimulateNCResponse(
         phi=phi.tolist(),
@@ -244,6 +259,7 @@ def simulate_nc(req: SimulateNCRequest):
             "r_outer_horizon": r_outer,
             "captured": captured,
             "clipped_by_r_stop": clipped_by_r_stop,
+            "termination_reason": termination_reason,
             "points_returned": int(len(r)),
         },
     )
@@ -253,6 +269,14 @@ def simulate_nc(req: SimulateNCRequest):
 def simulate_nc_maple(req: SimulateNCMapleRequest):
     horizons = nc_maple_horizons(req.m, req.theta)
     r_outer = horizons[-1] if horizons else None
+    capture_candidates = [value for value in (r_outer, req.capture_radius) if value is not None]
+    capture_radius_effective = max(capture_candidates) if capture_candidates else None
+    r0 = 1.0 / req.u0
+    if capture_radius_effective is not None and r0 <= capture_radius_effective:
+        raise HTTPException(
+            status_code=400,
+            detail=f"r0 must start outside the Maple/TCC capture radius. r0={r0:.6g}, r_capture={capture_radius_effective:.6g}",
+        )
     energy = energy_nc_maple(
         m=req.m,
         theta=req.theta,
@@ -272,8 +296,12 @@ def simulate_nc_maple(req: SimulateNCMapleRequest):
             du0=req.du0,
             phi_max=req.phi_max,
             n=req.n,
+            r_outer_horizon=r_outer,
+            r_stop=req.r_stop,
+            capture_radius=req.capture_radius,
         )
     except ValueError as exc:
+        logger.warning("simulate_nc_maple integration failed: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     x = r * np.cos(phi)
@@ -288,7 +316,23 @@ def simulate_nc_maple(req: SimulateNCMapleRequest):
         x = x[:first_invalid]
         y = y[:first_invalid]
 
-    captured = bool(r_outer is not None and len(r) > 0 and np.min(r) <= (r_outer * 1.0005))
+    captured = bool(
+        capture_radius_effective is not None and len(r) > 0 and np.min(r) <= (capture_radius_effective * 1.0005)
+    )
+    clipped_by_r_stop = bool(req.r_stop is not None and len(r) > 0 and np.max(r) >= req.r_stop)
+    termination_reason = "captured" if captured else "r_stop" if clipped_by_r_stop else "phi_max"
+    logger.info(
+        "simulate_nc_maple termination=%s m=%s theta=%s kappa=%s L=%s u0=%s du0=%s E=%s points=%s",
+        termination_reason,
+        req.m,
+        req.theta,
+        req.kappa,
+        req.L,
+        req.u0,
+        req.du0,
+        energy,
+        len(r),
+    )
 
     return SimulateNCMapleResponse(
         phi=phi.tolist(),
@@ -304,14 +348,19 @@ def simulate_nc_maple(req: SimulateNCMapleRequest):
             "L": req.L,
             "u0": req.u0,
             "du0": req.du0,
-            "r0": 1.0 / req.u0,
+            "r0": r0,
             "E": energy,
             "phi_max": req.phi_max,
+            "r_stop": req.r_stop,
+            "capture_radius": req.capture_radius,
+            "capture_radius_effective": capture_radius_effective,
             "n": req.n,
             "has_horizon": bool(horizons),
             "horizons": horizons,
             "r_outer_horizon": r_outer,
             "captured": captured,
+            "clipped_by_r_stop": clipped_by_r_stop,
+            "termination_reason": termination_reason,
             "points_returned": int(len(r)),
         },
     )

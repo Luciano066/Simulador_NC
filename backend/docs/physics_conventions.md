@@ -92,3 +92,10 @@ r0 = 1/u0
 
 This is intentionally separate from the full NC Schwarzschild mode, which uses
 the Lorentzian smeared mass `m(r)`.
+
+For orbit integration, Maple/TCC uses terminal events:
+
+- `horizon_crossing`: stops when `r` crosses the outer approximate horizon, when it exists.
+- `capture_radius`: fallback capture radius, defaulting to `r = 0.1`.
+- `r_stop`: outward escape cutoff, defaulting to `r = 3`.
+- `u <= 0` or nonfinite state values: stops instead of reflecting or continuing through invalid states.

@@ -142,6 +142,8 @@ class SimulateNCMapleRequest(RequestModel):
     u0: float = Field(1.0, gt=0, le=MAX_PARAMETER, description="initial inverse radius")
     du0: float = Field(2.09862, ge=-MAX_PARAMETER, le=MAX_PARAMETER, description="initial du/dphi")
     phi_max: float = Field(6.283185307179586, gt=0, le=MAX_PHI)
+    r_stop: Optional[float] = Field(3.0, gt=0, le=MAX_RADIUS, description="optional outward escape cutoff")
+    capture_radius: Optional[float] = Field(0.1, gt=0, le=MAX_RADIUS, description="fallback capture radius")
     n: int = Field(4000, ge=100, le=MAX_POINTS)
 
 
