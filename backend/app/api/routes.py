@@ -29,7 +29,7 @@ from app.core.observables import (
 from app.core.geodesics import orbit_nc_maple, orbit_u_phi, orbit_r_phi_nc
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 @router.get("/health")
 def health():
