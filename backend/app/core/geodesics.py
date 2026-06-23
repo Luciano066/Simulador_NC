@@ -292,3 +292,72 @@ def orbit_r_phi_nc(
 
     phi, y = _append_terminal_event(sol.t, sol.y, sol.t_events, sol.y_events, include_event_indexes)
     return _finite_orbit(phi, y[0])
+
+
+def orbit_nc_maple(
+    m: float,
+    theta: float,
+    kappa: float,
+    L: float,
+    u0: float,
+    du0: float,
+    phi_max: float,
+    n: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Integrate the Maple/TCC approximate timelike NC equation directly in u(phi).
+    """
+    if m <= 0:
+        raise ValueError("m > 0")
+    if theta <= 0:
+        raise ValueError("theta > 0")
+    if kappa < 0:
+        raise ValueError("kappa >= 0")
+    if L <= 0:
+        raise ValueError("L > 0")
+    if u0 <= 0:
+        raise ValueError("u0 > 0")
+    if phi_max <= 0:
+        raise ValueError("phi_max > 0")
+    if n < 10:
+        raise ValueError("n >= 10")
+
+    L2 = L * L
+    sqrt_theta = np.sqrt(theta)
+    linear_factor = 1.0 + (16.0 * m * sqrt_theta * kappa) / (np.pi * L2)
+
+    def rhs(_phi: float, y: np.ndarray) -> list[float]:
+        u_val, up_val = float(y[0]), float(y[1])
+        source = (2.0 * m * kappa) / L2 + 3.0 * m * u_val * u_val
+        correction = (16.0 * m * sqrt_theta * u_val * u_val * u_val) / np.pi
+        return [up_val, source - correction - linear_factor * u_val]
+
+    def nonpositive_u_event(_phi: float, y: np.ndarray) -> float:
+        return float(y[0])
+
+    nonpositive_u_event.terminal = True
+    nonpositive_u_event.direction = -1
+
+    phi_eval = np.linspace(0.0, phi_max, n, dtype=np.float64)
+    sol = solve_ivp(
+        rhs,
+        (0.0, phi_max),
+        [u0, du0],
+        t_eval=phi_eval,
+        events=[nonpositive_u_event],
+        rtol=RTOL,
+        atol=ATOL,
+    )
+
+    if not sol.success and all(len(times) == 0 for times in sol.t_events):
+        raise ValueError(f"Maple orbit integration failed: {sol.message}")
+
+    phi = sol.t
+    u = sol.y[0]
+    valid = np.isfinite(phi) & np.isfinite(u) & (u > 0.0)
+    if not np.all(valid):
+        first_invalid = int(np.argmax(~valid))
+        phi = phi[:first_invalid]
+        u = u[:first_invalid]
+
+    return phi, u, 1.0 / u

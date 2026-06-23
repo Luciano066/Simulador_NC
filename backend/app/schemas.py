@@ -106,3 +106,49 @@ class SimulateNCResponse(BaseModel):
     x: List[float]
     y: List[float]
     meta: dict
+
+
+class VeffNCMapleRequest(RequestModel):
+    metric: Literal["nc-maple"] = "nc-maple"
+    m: float = Field(0.1, gt=0, le=MAX_PARAMETER, description="Maple/TCC mass parameter")
+    theta: float = Field(0.001, gt=0, le=MAX_PARAMETER, description="noncommutativity parameter")
+    kappa: float = Field(0.5, ge=0, le=MAX_PARAMETER, description="0.5 for timelike Maple/TCC orbits")
+    L: float = Field(2.0, gt=0, le=MAX_PARAMETER, description="angular momentum")
+    u0: float = Field(1.0, gt=0, le=MAX_PARAMETER, description="initial inverse radius")
+    du0: float = Field(2.09862, ge=-MAX_PARAMETER, le=MAX_PARAMETER, description="initial du/dphi")
+    r_min: float = Field(0.1, gt=0, le=MAX_RADIUS)
+    r_max: float = Field(2.0, gt=0, le=MAX_RADIUS)
+    n: int = Field(2000, ge=10, le=MAX_POINTS)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> Self:
+        if self.r_max <= self.r_min:
+            raise ValueError("r_max must be greater than r_min")
+        return self
+
+
+class VeffNCMapleResponse(BaseModel):
+    r: List[float]
+    V_eff: List[float]
+    meta: dict
+
+
+class SimulateNCMapleRequest(RequestModel):
+    metric: Literal["nc-maple"] = "nc-maple"
+    m: float = Field(0.1, gt=0, le=MAX_PARAMETER, description="Maple/TCC mass parameter")
+    theta: float = Field(0.001, gt=0, le=MAX_PARAMETER, description="noncommutativity parameter")
+    kappa: float = Field(0.5, ge=0, le=MAX_PARAMETER, description="0.5 for timelike Maple/TCC orbits")
+    L: float = Field(2.0, gt=0, le=MAX_PARAMETER, description="angular momentum")
+    u0: float = Field(1.0, gt=0, le=MAX_PARAMETER, description="initial inverse radius")
+    du0: float = Field(2.09862, ge=-MAX_PARAMETER, le=MAX_PARAMETER, description="initial du/dphi")
+    phi_max: float = Field(6.283185307179586, gt=0, le=MAX_PHI)
+    n: int = Field(4000, ge=100, le=MAX_POINTS)
+
+
+class SimulateNCMapleResponse(BaseModel):
+    phi: List[float]
+    u: List[float]
+    r: List[float]
+    x: List[float]
+    y: List[float]
+    meta: dict

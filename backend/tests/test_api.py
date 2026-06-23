@@ -227,3 +227,52 @@ def test_rejects_excessive_response_points() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_simulate_nc_maple_success() -> None:
+    response = client.post(
+        "/simulate_nc_maple",
+        json={
+            "metric": "nc-maple",
+            "m": 0.1,
+            "theta": 0.001,
+            "kappa": 0.5,
+            "L": 2.0,
+            "u0": 1.0,
+            "du0": 2.09862,
+            "phi_max": 6.283185307179586,
+            "n": 1000,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["r"]) > 0
+    assert len(data["u"]) == len(data["r"])
+    assert data["meta"]["E"] > 0
+    assert data["meta"]["has_horizon"] is True
+    assert data["meta"]["points_returned"] == len(data["r"])
+
+
+def test_veff_nc_maple_success() -> None:
+    response = client.post(
+        "/veff_nc_maple",
+        json={
+            "metric": "nc-maple",
+            "m": 0.1,
+            "theta": 0.001,
+            "kappa": 0.5,
+            "L": 0.25,
+            "u0": 1.0,
+            "du0": 1.3,
+            "r_min": 0.1,
+            "r_max": 2.0,
+            "n": 1000,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["r"]) == 1000
+    assert len(data["V_eff"]) == 1000
+    assert data["meta"]["E"] > 0

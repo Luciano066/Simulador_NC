@@ -2,7 +2,15 @@ import numpy as np
 import pytest
 
 from app.core.config import get_cors_origins
-from app.core.observables import f_schwarzschild, nc_horizons, veff2_schwarzschild
+from app.core.observables import (
+    energy_nc_maple,
+    f_nc_maple,
+    f_schwarzschild,
+    nc_horizons,
+    nc_maple_horizons,
+    veff2_schwarzschild,
+    veff_nc_maple,
+)
 
 
 def test_schwarzschild_horizon_is_2m() -> None:
@@ -59,3 +67,32 @@ def test_development_cors_uses_local_defaults(monkeypatch: pytest.MonkeyPatch) -
 
     assert "http://localhost:5173" in origins
     assert all(origin != "*" for origin in origins)
+
+
+def test_maple_energy_uses_initial_u_and_du() -> None:
+    m = 0.1
+    theta = 0.001
+    kappa = 0.5
+    L = 2.0
+    u0 = 1.0
+    du0 = 2.09862
+    r0 = 1.0 / u0
+
+    expected = 0.5 * L * L * du0 * du0 + veff_nc_maple(
+        np.array([r0]),
+        m=m,
+        theta=theta,
+        kappa=kappa,
+        L=L,
+    )[0]
+
+    assert energy_nc_maple(m=m, theta=theta, kappa=kappa, L=L, u0=u0, du0=du0) == pytest.approx(expected)
+
+
+def test_maple_horizons_are_roots_of_approximate_metric() -> None:
+    horizons = nc_maple_horizons(m=0.1, theta=0.001)
+
+    assert len(horizons) == 2
+    values = f_nc_maple(np.array(horizons), m=0.1, theta=0.001)
+    assert values[0] == pytest.approx(0.0, abs=1e-12)
+    assert values[1] == pytest.approx(0.0, abs=1e-12)

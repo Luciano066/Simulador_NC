@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Header } from "./components/Header";
+import { MapleOrbitPlot } from "./components/MapleOrbitPlot";
+import { MapleParameterPanel } from "./components/MapleParameterPanel";
+import { MaplePotentialPlot } from "./components/MaplePotentialPlot";
 import { NcOrbitPlot } from "./components/NcOrbitPlot";
 import { NcParameterPanel } from "./components/NcParameterPanel";
 import { NcPotentialPlot } from "./components/NcPotentialPlot";
 import { OrbitPlot } from "./components/OrbitPlot";
 import { ParameterPanel } from "./components/ParameterPanel";
 import { PotentialPlot } from "./components/PotentialPlot";
+import { useMapleSimulation } from "./hooks/useMapleSimulation";
 import { useNcSimulation } from "./hooks/useNcSimulation";
 import { useSchwarzschildSimulation } from "./hooks/useSchwarzschildSimulation";
 
@@ -13,6 +17,7 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(true);
   const schwarzschild = useSchwarzschildSimulation();
   const nc = useNcSimulation();
+  const maple = useMapleSimulation();
 
   useEffect(() => {
     document.body.classList.toggle("dark-mode", darkMode);
@@ -141,6 +146,34 @@ export default function App() {
       <NcPotentialPlot
         ncPotential={nc.ncPotential}
         ncVeff={nc.ncVeff}
+        plotTheme={plotTheme}
+        baseLayout={baseLayout}
+        axisBase={axisBase}
+      />
+
+      <MapleParameterPanel
+        mapleParams={maple.mapleParams}
+        mapleTraj={maple.mapleTraj}
+        mapleVeff={maple.mapleVeff}
+        setMapleNum={maple.setMapleNum}
+        applyMaplePreset={maple.applyMaplePreset}
+        runMapleOrbit={maple.runMapleOrbit}
+        runMaplePotential={maple.runMaplePotential}
+        mapleOrbitLoading={maple.mapleOrbitLoading}
+        maplePotentialLoading={maple.maplePotentialLoading}
+        mapleOrbitErr={maple.mapleOrbitErr}
+        maplePotentialErr={maple.maplePotentialErr}
+      />
+
+      <MapleOrbitPlot
+        mapleTraj={maple.mapleTraj}
+        plotTheme={plotTheme}
+        baseLayout={baseLayout}
+        axisBase={axisBase}
+      />
+
+      <MaplePotentialPlot
+        mapleVeff={maple.mapleVeff}
         plotTheme={plotTheme}
         baseLayout={baseLayout}
         axisBase={axisBase}

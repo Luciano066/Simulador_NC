@@ -10,14 +10,21 @@ from app.schemas import (
     VeffNCResponse,
     SimulateNCRequest,
     SimulateNCResponse,
+    VeffNCMapleRequest,
+    VeffNCMapleResponse,
+    SimulateNCMapleRequest,
+    SimulateNCMapleResponse,
 )
 from app.core.observables import (
+    energy_nc_maple,
+    nc_maple_horizons,
     veff2_schwarzschild,
+    veff_nc_maple as veff_nc_maple_observable,
     ueff_schwarzschild,
     veff_nc_schwarzschild,
     nc_horizons,
 )
-from app.core.geodesics import orbit_u_phi, orbit_r_phi_nc
+from app.core.geodesics import orbit_nc_maple, orbit_u_phi, orbit_r_phi_nc
 
 router = APIRouter()
 
@@ -78,6 +85,43 @@ def veff_nc(req: VeffNCRequest):
             "n": req.n,
         },
     )
+
+
+@router.post("/veff_nc_maple", response_model=VeffNCMapleResponse)
+def veff_nc_maple(req: VeffNCMapleRequest):
+    horizons = nc_maple_horizons(req.m, req.theta)
+    r_outer = horizons[-1] if horizons else None
+    energy = energy_nc_maple(
+        m=req.m,
+        theta=req.theta,
+        kappa=req.kappa,
+        L=req.L,
+        u0=req.u0,
+        du0=req.du0,
+    )
+    r = np.linspace(req.r_min, req.r_max, req.n, dtype=np.float64)
+    V = veff_nc_maple_observable(r=r, m=req.m, theta=req.theta, kappa=req.kappa, L=req.L)
+
+    return VeffNCMapleResponse(
+        r=r.tolist(),
+        V_eff=V.tolist(),
+        meta={
+            "metric": req.metric,
+            "m": req.m,
+            "theta": req.theta,
+            "kappa": req.kappa,
+            "L": req.L,
+            "u0": req.u0,
+            "du0": req.du0,
+            "r0": 1.0 / req.u0,
+            "E": energy,
+            "has_horizon": bool(horizons),
+            "horizons": horizons,
+            "r_outer_horizon": r_outer,
+            "n": req.n,
+        },
+    )
+
 
 @router.post("/simulate", response_model=SimulateResponse)
 def simulate(req: SimulateRequest):
@@ -200,6 +244,74 @@ def simulate_nc(req: SimulateNCRequest):
             "r_outer_horizon": r_outer,
             "captured": captured,
             "clipped_by_r_stop": clipped_by_r_stop,
+            "points_returned": int(len(r)),
+        },
+    )
+
+
+@router.post("/simulate_nc_maple", response_model=SimulateNCMapleResponse)
+def simulate_nc_maple(req: SimulateNCMapleRequest):
+    horizons = nc_maple_horizons(req.m, req.theta)
+    r_outer = horizons[-1] if horizons else None
+    energy = energy_nc_maple(
+        m=req.m,
+        theta=req.theta,
+        kappa=req.kappa,
+        L=req.L,
+        u0=req.u0,
+        du0=req.du0,
+    )
+
+    try:
+        phi, u, r = orbit_nc_maple(
+            m=req.m,
+            theta=req.theta,
+            kappa=req.kappa,
+            L=req.L,
+            u0=req.u0,
+            du0=req.du0,
+            phi_max=req.phi_max,
+            n=req.n,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    x = r * np.cos(phi)
+    y = r * np.sin(phi)
+
+    valid = np.isfinite(phi) & np.isfinite(u) & np.isfinite(r) & np.isfinite(x) & np.isfinite(y)
+    if not np.all(valid):
+        first_invalid = int(np.argmax(~valid))
+        phi = phi[:first_invalid]
+        u = u[:first_invalid]
+        r = r[:first_invalid]
+        x = x[:first_invalid]
+        y = y[:first_invalid]
+
+    captured = bool(r_outer is not None and len(r) > 0 and np.min(r) <= (r_outer * 1.0005))
+
+    return SimulateNCMapleResponse(
+        phi=phi.tolist(),
+        u=u.tolist(),
+        r=r.tolist(),
+        x=x.tolist(),
+        y=y.tolist(),
+        meta={
+            "metric": req.metric,
+            "m": req.m,
+            "theta": req.theta,
+            "kappa": req.kappa,
+            "L": req.L,
+            "u0": req.u0,
+            "du0": req.du0,
+            "r0": 1.0 / req.u0,
+            "E": energy,
+            "phi_max": req.phi_max,
+            "n": req.n,
+            "has_horizon": bool(horizons),
+            "horizons": horizons,
+            "r_outer_horizon": r_outer,
+            "captured": captured,
             "points_returned": int(len(r)),
         },
     )

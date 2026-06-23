@@ -65,6 +65,54 @@ def veff_nc_schwarzschild(r: np.ndarray, M: float, theta: float, L: float, parti
         return f * L2_over_2r2
     raise ValueError("particle deve ser 'massive' ou 'photon'")
 
+
+def f_nc_maple(r: np.ndarray, m: float, theta: float) -> np.ndarray:
+    """
+    Approximate NC metric factor used by the Maple/TCC model.
+
+    f(r) = 1 - 2m/r + 8m sqrt(theta)/(pi r^2)
+    """
+    sqrt_theta = np.sqrt(theta)
+    return 1.0 - (2.0 * m) / r + (8.0 * m * sqrt_theta) / (np.pi * r * r)
+
+
+def veff_nc_maple(r: np.ndarray, m: float, theta: float, kappa: float, L: float) -> np.ndarray:
+    """
+    Effective potential used by the Maple/TCC approximation.
+
+    V(r) = f_nc_maple(r) * (kappa + L^2/(2r^2))
+    """
+    return f_nc_maple(r, m, theta) * (kappa + (L * L) / (2.0 * r * r))
+
+
+def energy_nc_maple(m: float, theta: float, kappa: float, L: float, u0: float, du0: float) -> float:
+    """
+    Initial energy for the Maple/TCC approximation.
+
+    E = 0.5 L^2 (du0)^2 + V(r0), with r0 = 1/u0.
+    """
+    r0 = 1.0 / u0
+    v0 = float(veff_nc_maple(np.array([r0], dtype=np.float64), m, theta, kappa, L)[0])
+    return 0.5 * L * L * du0 * du0 + v0
+
+
+def nc_maple_horizons(m: float, theta: float) -> list[float]:
+    """
+    Real positive roots of the approximate Maple/TCC horizon equation.
+    """
+    if m <= 0 or theta <= 0:
+        return []
+
+    constant = (8.0 * m * np.sqrt(theta)) / np.pi
+    discriminant_term = (m * m) - constant
+    if discriminant_term < 0.0:
+        return []
+
+    root = float(np.sqrt(discriminant_term))
+    roots = [m - root, m + root]
+    return [float(value) for value in roots if value > 0.0 and np.isfinite(value)]
+
+
 def ueff_schwarzschild(r: np.ndarray, M: float, L: float, particle: str) -> np.ndarray:
     """
     Energia potencial efetiva U_eff na forma:

@@ -1,6 +1,12 @@
 # SI-NC - Simulador de Orbitas Relativisticas
 
-Projeto com frontend React/Vite e backend FastAPI para simulacao de orbitas relativisticas (Schwarzschild e nao comutativo).
+Projeto com frontend React/Vite e backend FastAPI para simulacao de orbitas relativisticas.
+
+Modos disponiveis:
+
+- Schwarzschild classico.
+- Schwarzschild nao comutativo completo, com massa efetiva espalhada.
+- Aproximacao Maple/TCC para reproduzir os graficos gerados no Maple.
 
 ## Requisitos
 

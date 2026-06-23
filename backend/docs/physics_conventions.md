@@ -65,3 +65,30 @@ K = 0 for photons
 
 The noncommutativity parameter `theta` has dimensions of length squared. In the
 limit `theta -> 0`, the outer NC horizon approaches the Schwarzschild value `2M`.
+
+## Maple/TCC approximation mode
+
+The `/simulate_nc_maple` and `/veff_nc_maple` endpoints implement the approximate
+timelike equation used to reproduce the Maple plots:
+
+```text
+u'' + u * (1 + 16 m sqrt(theta) kappa / (pi L^2))
+  = 2 m kappa / L^2 + 3 m u^2 - 16 m sqrt(theta) u^3 / pi
+```
+
+The corresponding approximate metric factor and potential are:
+
+```text
+f(r) = 1 - 2m/r + 8m sqrt(theta)/(pi r^2)
+V(r) = f(r) * (kappa + L^2/(2r^2))
+```
+
+The Maple/TCC mode does not receive `E` as an independent input. It computes:
+
+```text
+E = 0.5 L^2 (du0)^2 + V(r0)
+r0 = 1/u0
+```
+
+This is intentionally separate from the full NC Schwarzschild mode, which uses
+the Lorentzian smeared mass `m(r)`.
