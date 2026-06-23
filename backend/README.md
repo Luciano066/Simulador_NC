@@ -20,6 +20,7 @@ Use `backend/.env.example` como referencia.
   - Exemplo: `http://localhost:5173,http://127.0.0.1:5173`
 - `APP_ENV`: use `production` em producao. Nesse modo, `CORS_ORIGINS` deve ser
   definido explicitamente e nao pode usar `*`.
+- `LOG_LEVEL`: nivel de logs da API. O default local e `INFO`.
 
 ## Convencoes fisicas
 
