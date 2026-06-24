@@ -3,9 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requestJson, resolveApiBaseUrl } from "./client";
 import { simulateOrbit } from "./simulate";
 import { simulateOrbitNCLegacy } from "./simulate_nc_legacy";
-import { simulateOrbitNCMaple } from "./simulate_nc_maple";
+import { fetchVeff } from "./veff";
 import { fetchVeffNCLegacy } from "./veff_nc_legacy";
-import { fetchVeffNCMaple } from "./veff_nc_maple";
 
 describe("API client", () => {
   beforeEach(() => {
@@ -36,7 +35,7 @@ describe("API client", () => {
     await expect(requestJson("/simulate", { any: true })).rejects.toThrow("r0 deve ser > 2M");
   });
 
-  it("faz POST para /simulate", async () => {
+  it("faz POST para os endpoints classicos", async () => {
     const payload = {
       metric: "schwarzschild",
       particle: "massive",
@@ -46,6 +45,16 @@ describe("API client", () => {
       r0: 10,
       radial_sign: "in",
       phi_max: 10,
+      n: 100,
+    };
+    const potentialPayload = {
+      metric: "schwarzschild",
+      particle: "massive",
+      M: 1,
+      E: 1.2,
+      L: 4,
+      r_min: 2.2,
+      r_max: 50,
       n: 100,
     };
 
@@ -58,45 +67,9 @@ describe("API client", () => {
         },
       ),
     );
-
-    const response = await simulateOrbit(payload);
-
-    expect(response.meta.ok).toBe(true);
-    expect(fetch).toHaveBeenCalledTimes(1);
-
-    const [url, options] = fetch.mock.calls[0];
-    expect(url).toBe("http://127.0.0.1:8000/simulate");
-    expect(options.method).toBe("POST");
-    expect(JSON.parse(options.body)).toEqual(payload);
-  });
-
-  it("faz POST para os endpoints Maple/TCC", async () => {
-    const payload = {
-      metric: "nc-maple",
-      m: 0.1,
-      theta: 0.001,
-      kappa: 0.5,
-      L: 2,
-      u0: 1,
-      du0: 2.09862,
-      phi_max: 2 * Math.PI,
-      r_min: 0.1,
-      r_max: 2,
-      n: 100,
-    };
-
     fetch.mockResolvedValueOnce(
       new Response(
-        JSON.stringify({ phi: [], u: [], r: [], x: [], y: [], meta: { E: 1 } }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    );
-    fetch.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({ r: [], V_eff: [], meta: { E: 1 } }),
+        JSON.stringify({ r: [], U_eff: [], V_eff2: [], meta: { ok: true } }),
         {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -104,12 +77,17 @@ describe("API client", () => {
       ),
     );
 
-    await simulateOrbitNCMaple(payload);
-    await fetchVeffNCMaple(payload);
+    const orbitResponse = await simulateOrbit(payload);
+    const potentialResponse = await fetchVeff(potentialPayload);
 
+    expect(orbitResponse.meta.ok).toBe(true);
+    expect(potentialResponse.meta.ok).toBe(true);
     expect(fetch).toHaveBeenCalledTimes(2);
-    expect(fetch.mock.calls[0][0]).toBe("http://127.0.0.1:8000/simulate_nc_maple");
-    expect(fetch.mock.calls[1][0]).toBe("http://127.0.0.1:8000/veff_nc_maple");
+    expect(fetch.mock.calls[0][0]).toBe("http://127.0.0.1:8000/simulate");
+    expect(fetch.mock.calls[0][1].method).toBe("POST");
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(payload);
+    expect(fetch.mock.calls[1][0]).toBe("http://127.0.0.1:8000/veff");
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual(potentialPayload);
   });
 
   it("faz POST para os endpoints NC legado", async () => {

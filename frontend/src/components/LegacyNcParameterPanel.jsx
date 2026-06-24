@@ -1,4 +1,5 @@
 import { ErrorMessage } from "./ErrorMessage";
+import { InfoBadge } from "./InfoBadge";
 
 export function LegacyNcParameterPanel({
   legacyParams,
@@ -8,8 +9,9 @@ export function LegacyNcParameterPanel({
   setLegacyStr,
   setLegacyBool,
   applyLegacyPreset,
-  runLegacyOrbit,
+  runLegacySimulation,
   runLegacyPotential,
+  resetLegacyDefaults,
   legacyOrbitLoading,
   legacyPotentialLoading,
   legacyOrbitErr,
@@ -17,14 +19,18 @@ export function LegacyNcParameterPanel({
 }) {
   const rst = legacyTraj?.meta?.rst ?? legacyVeff?.meta?.rst ?? legacyParams.rst;
   const energy = legacyTraj?.meta?.energy_level ?? legacyVeff?.meta?.energy_level ?? null;
+  const loading = legacyOrbitLoading || legacyPotentialLoading;
 
   return (
-    <article>
+    <article className="parameter-card">
       <div className="programa">
-        <h5>NC legado / Simulador antigo</h5>
-        <p className="note">
-          Modo polinomial em u = 1/r, separado do NC completo e do Maple/TCC. Usa a quadratura do simulador antigo.
-        </p>
+        <div className="card-title-row">
+          <div>
+            <p className="eyebrow">Entrada</p>
+            <h5>Parametros</h5>
+          </div>
+          <InfoBadge tone="accent">NC legado</InfoBadge>
+        </div>
 
         <div className="input">
           <div className="input-grid">
@@ -45,11 +51,21 @@ export function LegacyNcParameterPanel({
                 value={legacyParams.theta}
                 onChange={setLegacyNum("theta")}
               />
+              <input
+                className="range-input"
+                type="range"
+                min="0.001"
+                max="0.2"
+                step="0.001"
+                value={legacyParams.theta}
+                onChange={setLegacyNum("theta")}
+              />
             </label>
 
             <label className="field">
               Momento angular (L)
               <input className="css-input" type="number" step="0.01" value={legacyParams.L} onChange={setLegacyNum("L")} />
+              <input className="range-input" type="range" min="0.1" max="10" step="0.01" value={legacyParams.L} onChange={setLegacyNum("L")} />
               <small>Usado na particula massiva</small>
             </label>
 
@@ -135,18 +151,26 @@ export function LegacyNcParameterPanel({
           </div>
         </div>
 
-        <button onClick={runLegacyOrbit} disabled={legacyOrbitLoading} className="click">
-          {legacyOrbitLoading ? "Calculando orbita legado..." : "Gerar Orbita NC Legado"}
-        </button>
-        <button onClick={runLegacyPotential} disabled={legacyPotentialLoading} className="click">
-          {legacyPotentialLoading ? "Calculando potencial legado..." : "Gerar Potencial NC Legado"}
-        </button>
-        <button onClick={() => applyLegacyPreset("massive")} className="click">
-          Preset legado massivo
-        </button>
-        <button onClick={() => applyLegacyPreset("photon")} className="click">
-          Preset legado foton
-        </button>
+        <div className="action-row">
+          <button onClick={runLegacySimulation} disabled={loading} className="click primary-action">
+            {loading ? "Calculando..." : "Gerar simulacao"}
+          </button>
+          <button onClick={resetLegacyDefaults} disabled={loading} className="click secondary-action">
+            Restaurar padrao
+          </button>
+        </div>
+
+        <div className="preset-row">
+          <button onClick={() => applyLegacyPreset("massive")} className="mini-button">
+            Massivo
+          </button>
+          <button onClick={() => applyLegacyPreset("photon")} className="mini-button">
+            Foton
+          </button>
+          <button onClick={runLegacyPotential} disabled={legacyPotentialLoading} className="mini-button">
+            Atualizar potencial
+          </button>
+        </div>
 
         <div className="valor">
           rst = <strong>{Number.isFinite(rst) ? Number(rst).toFixed(3) : "auto"}</strong>
@@ -156,8 +180,8 @@ export function LegacyNcParameterPanel({
           ) : null}
         </div>
 
-        <ErrorMessage label="Orbita NC legado" message={legacyOrbitErr} />
-        <ErrorMessage label="Potencial NC legado" message={legacyPotentialErr} />
+        <ErrorMessage label="Orbita NC TCC/legado" message={legacyOrbitErr} />
+        <ErrorMessage label="Potencial NC TCC/legado" message={legacyPotentialErr} />
       </div>
     </article>
   );

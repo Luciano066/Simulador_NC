@@ -6,21 +6,23 @@ import { toFriendlyErrorMessage } from "../utils/errors";
 
 const API_BASE_URL = resolveApiBaseUrl();
 
+const DEFAULT_PARAMS = {
+  metric: "schwarzschild",
+  particle: "massive",
+  M: 1.0,
+  E: 1.05,
+  L: 4.2,
+  r0: 20.0,
+  radial_sign: "in",
+  turns: 6,
+  n: 4000,
+  r_min: 2.2,
+  r_max: 50.0,
+  n_veff: 2000,
+};
+
 export function useSchwarzschildSimulation() {
-  const [p, setP] = useState({
-    metric: "schwarzschild",
-    particle: "massive",
-    M: 1.0,
-    E: 1.05,
-    L: 4.2,
-    r0: 20.0,
-    radial_sign: "in",
-    turns: 6,
-    n: 4000,
-    r_min: 2.2,
-    r_max: 50.0,
-    n_veff: 2000,
-  });
+  const [p, setP] = useState(DEFAULT_PARAMS);
 
   const [traj, setTraj] = useState(null);
   const [veff, setVeff] = useState(null);
@@ -193,6 +195,17 @@ export function useSchwarzschildSimulation() {
     }
   }
 
+  function runSimulation() {
+    void runOrbit();
+    void runPotential();
+  }
+
+  function resetDefaults() {
+    setP(DEFAULT_PARAMS);
+    setUseEnergyParam(true);
+    setAutoRange(true);
+  }
+
   useEffect(() => {
     void runOrbit();
     void runPotential();
@@ -228,5 +241,7 @@ export function useSchwarzschildSimulation() {
     rMaxUsed,
     runOrbit,
     runPotential,
+    runSimulation,
+    resetDefaults,
   };
 }

@@ -66,6 +66,11 @@ K = 0 for photons
 The noncommutativity parameter `theta` has dimensions of length squared. In the
 limit `theta -> 0`, the outer NC horizon approaches the Schwarzschild value `2M`.
 
+For orbit integration, the full NC mode stops with `termination_reason =
+captured` when `r` reaches the outer NC horizon or the optional inner `r_stop`
+capture radius. When both are present, the effective capture radius is the larger
+of the two.
+
 ## Maple/TCC approximation mode
 
 The `/simulate_nc_maple` and `/veff_nc_maple` endpoints implement the approximate

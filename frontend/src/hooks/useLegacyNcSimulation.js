@@ -19,7 +19,7 @@ const PRESETS = {
     norbit: 50.0,
     capture_radius: 2.0,
     n: 5000,
-    r_min: 0.001,
+    r_min: 0.05,
     n_veff: 50000,
   },
   photon: {
@@ -34,7 +34,7 @@ const PRESETS = {
     norbit: 50.0,
     capture_radius: 2.0,
     n: 2000,
-    r_min: 0.001,
+    r_min: 0.05,
     n_veff: 50000,
   },
 };
@@ -64,6 +64,45 @@ function logLegacyResponse(label, response) {
     E: response?.meta?.energy_level ?? response?.meta?.E ?? null,
     points: r.length,
   });
+}
+
+function valuesClose(a, b) {
+  if (typeof a === "string" || typeof b === "string") return a === b;
+  const av = Number(a);
+  const bv = Number(b);
+  if (!Number.isFinite(av) || !Number.isFinite(bv)) return false;
+  return Math.abs(av - bv) <= 1.0e-9 * Math.max(1.0, Math.abs(av), Math.abs(bv));
+}
+
+function legacyMetaMatchesParams(meta, params) {
+  if (!meta) return false;
+  return (
+    meta.metric === params.metric &&
+    meta.particle === params.particle &&
+    valuesClose(meta.theta, params.theta) &&
+    valuesClose(meta.L, params.L) &&
+    valuesClose(meta.E, params.E) &&
+    valuesClose(meta.b, params.b)
+  );
+}
+
+function finiteMax(values) {
+  let max = -Infinity;
+  for (const value of values ?? []) {
+    if (Number.isFinite(value) && value > max) max = value;
+  }
+  return Number.isFinite(max) ? max : null;
+}
+
+function potentialRangeFromOrbit(params, orbit) {
+  const candidate = legacyMetaMatchesParams(orbit?.meta, params) ? orbit : null;
+  const rMaxOrbit = Number.isFinite(candidate?.meta?.r_max_orbit)
+    ? candidate.meta.r_max_orbit
+    : finiteMax(candidate?.r);
+  if (Number.isFinite(rMaxOrbit) && rMaxOrbit > params.r_min) {
+    return { r_max: rMaxOrbit };
+  }
+  return {};
 }
 
 function legacyPayload(params, extra = {}) {
@@ -152,15 +191,16 @@ export function useLegacyNcSimulation() {
       const result = await simulateOrbitNCLegacy(payload);
       logLegacyResponse("orbit response", result);
       setLegacyTraj(result);
+      await runLegacyPotential(result);
     } catch (error) {
-      setLegacyOrbitErr(toFriendlyErrorMessage(error, API_BASE_URL, "Falha ao calcular orbita NC legado."));
+      setLegacyOrbitErr(toFriendlyErrorMessage(error, API_BASE_URL, "Falha ao calcular orbita NC TCC/legado."));
       setLegacyTraj(null);
     } finally {
       setLegacyOrbitLoading(false);
     }
   }
 
-  async function runLegacyPotential() {
+  async function runLegacyPotential(orbitForRange = legacyTraj) {
     setLegacyPotentialErr("");
     if (!validateCommon(setLegacyPotentialErr)) return;
     if (!Number.isFinite(legacyParams.r_min) || legacyParams.r_min <= 0) {
@@ -176,6 +216,7 @@ export function useLegacyNcSimulation() {
     try {
       const payload = legacyPayload(legacyParams, {
         r_min: legacyParams.r_min,
+        ...potentialRangeFromOrbit(legacyParams, orbitForRange),
         n: legacyParams.n_veff,
       });
       console.info("SI-NC nc-legado potential payload", payload);
@@ -183,7 +224,7 @@ export function useLegacyNcSimulation() {
       logLegacyResponse("potential response", result);
       setLegacyVeff(result);
     } catch (error) {
-      setLegacyPotentialErr(toFriendlyErrorMessage(error, API_BASE_URL, "Falha ao calcular potencial NC legado."));
+      setLegacyPotentialErr(toFriendlyErrorMessage(error, API_BASE_URL, "Falha ao calcular potencial NC TCC/legado."));
       setLegacyVeff(null);
     } finally {
       setLegacyPotentialLoading(false);
@@ -192,9 +233,16 @@ export function useLegacyNcSimulation() {
 
   useEffect(() => {
     void runLegacyOrbit();
-    void runLegacyPotential();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function runLegacySimulation() {
+    void runLegacyOrbit();
+  }
+
+  function resetLegacyDefaults() {
+    setLegacyParams(PRESETS.massive);
+  }
 
   return {
     legacyParams,
@@ -210,5 +258,7 @@ export function useLegacyNcSimulation() {
     applyLegacyPreset,
     runLegacyOrbit,
     runLegacyPotential,
+    runLegacySimulation,
+    resetLegacyDefaults,
   };
 }

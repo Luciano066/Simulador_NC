@@ -4,6 +4,7 @@ import pytest
 from app.core.config import get_cors_origins
 from app.core.observables import (
     critical_points_legacy,
+    dveff_nc_schwarzschild_dr,
     energy_nc_maple,
     f_nc_maple,
     f_schwarzschild,
@@ -14,6 +15,7 @@ from app.core.observables import (
     potencial_massiva_nc,
     veff2_schwarzschild,
     veff_nc_maple,
+    veff_nc_schwarzschild,
 )
 
 
@@ -124,6 +126,46 @@ def test_maple_orbit_equation_matches_plotted_potential_derivative() -> None:
     )
 
     assert ode_acceleration == pytest.approx(-numerical_dvdu / (L * L), rel=1e-6, abs=1e-8)
+
+
+def test_nc_complete_derivative_matches_plotted_potential() -> None:
+    M = 1.0
+    theta = 0.05
+    L = 4.0
+    r = 4.5
+    h = 1e-5
+
+    left = veff_nc_schwarzschild(np.array([r - h]), M=M, theta=theta, L=L, particle="massive")[0]
+    right = veff_nc_schwarzschild(np.array([r + h]), M=M, theta=theta, L=L, particle="massive")[0]
+    numerical = (right - left) / (2.0 * h)
+    analytic = dveff_nc_schwarzschild_dr(np.array([r]), M=M, theta=theta, L=L, particle="massive")[0]
+
+    assert analytic == pytest.approx(numerical, rel=1e-7, abs=1e-9)
+
+
+def test_nc_tcc_potential_matches_equation_47() -> None:
+    r = np.array([0.03, 0.2, 1.5])
+    M = 0.09
+    theta = 0.001
+    L = 0.4
+    K = 0.5
+    sqrt_theta = np.sqrt(theta)
+
+    mass_term = np.arctan(r / sqrt_theta) - (r * sqrt_theta) / (r * r + theta)
+    metric_factor = 1.0 - (4.0 * M / (np.pi * r)) * mass_term
+    expected = metric_factor * (K + (L * L) / (2.0 * r * r))
+
+    assert veff_nc_schwarzschild(r, M=M, theta=theta, L=L, particle="massive", K=K) == pytest.approx(expected)
+
+
+def test_nc_tcc_potential_changes_when_k_changes() -> None:
+    r = np.linspace(0.2, 2.0, 20)
+    common = {"M": 0.09, "theta": 0.001, "L": 0.4, "particle": "massive"}
+
+    massive_like = veff_nc_schwarzschild(r, **common, K=0.5)
+    light_like = veff_nc_schwarzschild(r, **common, K=0.0)
+
+    assert not np.allclose(massive_like, light_like)
 
 
 def test_legacy_massive_nc_potential_matches_old_simulator_formula() -> None:

@@ -14,7 +14,7 @@ export function OrbitPlot({ traj, horizon, photonSphere, plotTheme, baseLayout, 
   return (
     <article>
       <div className="programa" id="titulo2">
-        <h5>Grafico da Orbita</h5>
+        <h5>Orbita classica</h5>
         <div className="graf1 plot-card">
           <Plot
             data={[
@@ -53,7 +53,7 @@ export function OrbitPlot({ traj, horizon, photonSphere, plotTheme, baseLayout, 
             ]}
             layout={{
               ...baseLayout,
-              title: "Trajetoria (x,y)",
+              title: "Orbita classica",
               xaxis: { title: "x", range: ranges?.xRange, ...axisBase },
               yaxis: { title: "y", scaleanchor: "x", range: ranges?.yRange, ...axisBase },
               hovermode: "closest",

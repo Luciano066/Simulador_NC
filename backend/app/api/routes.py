@@ -24,6 +24,7 @@ from app.schemas import (
 from app.core.observables import (
     energy_nc_maple,
     critical_points_legacy,
+    kappa_from_particle,
     legacy_rst_massive,
     nc_maple_horizons,
     potencial_foton_nc,
@@ -47,12 +48,189 @@ def _finite_min_max(values: np.ndarray) -> tuple[float | None, float | None]:
     return float(np.min(finite)), float(np.max(finite))
 
 
+def _nc_effective_k(particle: str, K: float | None) -> float:
+    return kappa_from_particle(particle) if K is None else K
+
+
+def _serialize_nc_critical_points(r: np.ndarray, V: np.ndarray, r_outer: float | None) -> dict[str, list[dict[str, float | str | bool]]]:
+    from scipy.signal import find_peaks
+
+    finite = np.isfinite(r) & np.isfinite(V)
+    r_finite = r[finite]
+    V_finite = V[finite]
+    if len(r_finite) < 3:
+        return {"maxima": [], "minima": []}
+
+    maxima_ids, _ = find_peaks(V_finite, distance=10)
+    minima_ids, _ = find_peaks(-V_finite, distance=10)
+
+    def serialize(indexes: np.ndarray, stability: str) -> list[dict[str, float | str | bool]]:
+        points: list[dict[str, float | str | bool]] = []
+        for index in indexes:
+            rr = float(r_finite[index])
+            vv = float(V_finite[index])
+            if not np.isfinite(rr) or not np.isfinite(vv):
+                continue
+            points.append(
+                {
+                    "r": rr,
+                    "V_eff": vv,
+                    "stability": stability,
+                    "inside_outer_horizon": bool(r_outer is not None and rr <= r_outer),
+                }
+            )
+        return points
+
+    return {
+        "maxima": serialize(maxima_ids, "unstable"),
+        "minima": serialize(minima_ids, "stable"),
+    }
+
+
+def _select_nc_extrema(
+    r: np.ndarray,
+    V: np.ndarray,
+    critical_points: dict[str, list[dict[str, float | str | bool]]],
+    r_outer: float | None,
+) -> dict:
+    finite = np.isfinite(r) & np.isfinite(V)
+    if not np.any(finite):
+        return {"V_min": None, "V_max": None, "r_at_V_min": None, "r_at_V_max": None}
+
+    def outside(points: list[dict[str, float | str | bool]]) -> list[dict[str, float | str | bool]]:
+        if r_outer is None:
+            return points
+        outside_points = [point for point in points if float(point["r"]) > r_outer]
+        return outside_points or points
+
+    minima = outside(critical_points.get("minima", []))
+    maxima = outside(critical_points.get("maxima", []))
+
+    if minima:
+        min_point = min(minima, key=lambda point: float(point["V_eff"]))
+        V_min = float(min_point["V_eff"])
+        r_at_V_min = float(min_point["r"])
+    else:
+        indexes = np.where(finite)[0]
+        idx = int(indexes[np.argmin(V[finite])])
+        V_min = float(V[idx])
+        r_at_V_min = float(r[idx])
+
+    if maxima:
+        max_point = max(maxima, key=lambda point: float(point["V_eff"]))
+        V_max = float(max_point["V_eff"])
+        r_at_V_max = float(max_point["r"])
+    else:
+        indexes = np.where(finite)[0]
+        idx = int(indexes[np.argmax(V[finite])])
+        V_max = float(V[idx])
+        r_at_V_max = float(r[idx])
+
+    return {
+        "V_min": V_min,
+        "V_max": V_max,
+        "r_at_V_min": r_at_V_min,
+        "r_at_V_max": r_at_V_max,
+    }
+
+
+def _nc_delta_diagnostics(r: np.ndarray, V: np.ndarray, E: float) -> dict:
+    finite = np.isfinite(r) & np.isfinite(V)
+    if len(r) == 0 or not np.any(finite):
+        return {
+            "delta_min": None,
+            "delta_max": None,
+            "forbidden_fraction": None,
+            "trajectory_warning": None,
+        }
+
+    delta = E - V[finite]
+    forbidden_fraction = float(np.mean(delta < -1.0e-8))
+    return {
+        "delta_min": float(np.min(delta)),
+        "delta_max": float(np.max(delta)),
+        "forbidden_fraction": forbidden_fraction,
+        "trajectory_warning": "A trajetória atravessa região proibida: E < V_eff."
+        if forbidden_fraction > 0.0
+        else None,
+    }
+
+
+def _nc_circular_orbit_status(E: float, extrema: dict, tolerance: float = 1.0e-4) -> str | None:
+    for key, status in (("V_max", "unstable"), ("V_min", "stable")):
+        value = extrema.get(key)
+        if value is None:
+            continue
+        scale = max(1.0, abs(float(value)), abs(E))
+        if abs(E - float(value)) <= tolerance * scale:
+            return status
+    return None
+
+
 def _legacy_rst(particle: str, L: float, rst: float | None) -> float:
     if rst is not None:
         return rst
     if particle == "massive":
         return legacy_rst_massive(L)
     return 50.0
+
+
+def _legacy_default_potential_r_max(particle: str, rst: float) -> float:
+    if particle == "massive":
+        return 2.0 * rst
+    return rst
+
+
+def _legacy_energy_level(particle: str, E: float, b: float) -> float:
+    if particle == "massive":
+        return E
+    if particle == "photon":
+        return 1.0 / (b * b)
+    raise ValueError("particle must be massive or photon")
+
+
+def _legacy_potential(r: np.ndarray, particle: str, L: float, theta: float) -> np.ndarray:
+    if particle == "massive":
+        return potencial_massiva_nc(r, L, theta)
+    if particle == "photon":
+        return potencial_foton_nc(r, theta)
+    raise ValueError("particle must be massive or photon")
+
+
+def _legacy_orbit_diagnostics(r: np.ndarray, V: np.ndarray, energy_level: float) -> dict:
+    finite = np.isfinite(r) & np.isfinite(V)
+    if len(r) == 0 or not np.any(finite):
+        return {
+            "delta_min": None,
+            "delta_max": None,
+            "forbidden_fraction": None,
+            "r_min_orbit": None,
+            "r_max_orbit": None,
+            "V_min_on_orbit": None,
+            "V_max_on_orbit": None,
+            "warning": None,
+        }
+
+    r_finite = r[finite]
+    V_finite = V[finite]
+    delta = energy_level - V_finite
+    forbidden_fraction = float(np.mean(delta < -1.0e-8))
+    warning = (
+        "A órbita atravessa região proibida: potencial e órbita podem estar incoerentes."
+        if forbidden_fraction > 0.0
+        else None
+    )
+
+    return {
+        "delta_min": float(np.min(delta)),
+        "delta_max": float(np.max(delta)),
+        "forbidden_fraction": forbidden_fraction,
+        "r_min_orbit": float(np.min(r_finite)),
+        "r_max_orbit": float(np.max(r_finite)),
+        "V_min_on_orbit": float(np.min(V_finite)),
+        "V_max_on_orbit": float(np.max(V_finite)),
+        "warning": warning,
+    }
 
 @router.get("/health")
 def health():
@@ -92,9 +270,15 @@ def veff_nc(req: VeffNCRequest):
     logger.info("nc-completo potential payload=%s", req.model_dump())
     horizons = nc_horizons(req.M, req.theta)
     r_outer = horizons[-1] if horizons else None
+    K = _nc_effective_k(req.particle, req.K)
+    mass_concentration_radius = 3.0 * float(np.sqrt(req.theta))
     r = np.linspace(req.r_min, req.r_max, req.n, dtype=np.float64)
-    V = veff_nc_schwarzschild(r=r, M=req.M, theta=req.theta, L=req.L, particle=req.particle)
+    V = veff_nc_schwarzschild(r=r, M=req.M, theta=req.theta, L=req.L, particle=req.particle, K=K)
     v_min, v_max = _finite_min_max(V)
+    critical_points = _serialize_nc_critical_points(r, V, r_outer)
+    extrema = _select_nc_extrema(r, V, critical_points, r_outer)
+    delta_diagnostics = _nc_delta_diagnostics(r, V, req.E)
+    circular_orbit = _nc_circular_orbit_status(req.E, extrema)
     logger.info(
         "nc-completo potential first_r=%s last_r=%s min_V=%s max_V=%s E=%s points=%s",
         float(r[0]),
@@ -113,12 +297,22 @@ def veff_nc(req: VeffNCRequest):
             "particle": req.particle,
             "M": req.M,
             "theta": req.theta,
+            "K": K,
             "E": req.E,
             "L": req.L,
             "b": (req.L / req.E) if req.E != 0 else None,
+            "mode": "nc-tcc",
+            "physical_model": "nc-tcc-eq47",
+            "mass_concentration_radius": mass_concentration_radius,
             "has_horizon": bool(horizons),
             "horizons": horizons,
             "r_outer_horizon": r_outer,
+            "V_min_raw": v_min,
+            "V_max_raw": v_max,
+            "critical_points": critical_points,
+            "circular_orbit": circular_orbit,
+            **extrema,
+            **delta_diagnostics,
             "n": req.n,
         },
     )
@@ -128,18 +322,16 @@ def veff_nc(req: VeffNCRequest):
 def veff_nc_legacy(req: VeffNCLegacyRequest):
     logger.info("nc-legado potential payload=%s", req.model_dump())
     rst = _legacy_rst(req.particle, req.L, req.rst)
-    r_max = req.r_max if req.r_max is not None else rst
+    r_max = req.r_max if req.r_max is not None else _legacy_default_potential_r_max(req.particle, rst)
+    mass_concentration_radius = 3.0 * float(np.sqrt(req.theta))
     if r_max <= req.r_min:
         raise HTTPException(status_code=400, detail="r_max/rst must be greater than r_min")
 
     r = np.linspace(req.r_min, r_max, req.n, dtype=np.float64)
-    if req.particle == "massive":
-        V = potencial_massiva_nc(r, req.L, req.theta)
-        energy_level = req.E
-    elif req.particle == "photon":
-        V = potencial_foton_nc(r, req.theta)
-        energy_level = 1.0 / (req.b * req.b)
-    else:
+    try:
+        V = _legacy_potential(r, req.particle, req.L, req.theta)
+        energy_level = _legacy_energy_level(req.particle, req.E, req.b)
+    except ValueError:
         raise HTTPException(status_code=400, detail="particle must be massive or photon")
 
     critical_points = critical_points_legacy(r, V)
@@ -160,12 +352,15 @@ def veff_nc_legacy(req: VeffNCLegacyRequest):
         meta={
             "metric": req.metric,
             "mode": "nc-legado",
+            "physical_model": "nc-legacy-polynomial",
             "particle": req.particle,
             "theta": req.theta,
+            "mass_concentration_radius": mass_concentration_radius,
             "L": req.L,
             "E": req.E,
             "b": req.b,
             "energy_level": energy_level,
+            "energy_line_convention": "E" if req.particle == "massive" else "1/b^2",
             "rst": rst,
             "r_min": req.r_min,
             "r_max": r_max,
@@ -197,6 +392,7 @@ def veff_nc_maple(req: VeffNCMapleRequest):
         V_eff=V.tolist(),
         meta={
             "metric": req.metric,
+            "physical_model": "nc-maple-approximation",
             "m": req.m,
             "theta": req.theta,
             "kappa": req.kappa,
@@ -276,10 +472,13 @@ def simulate_nc(req: SimulateNCRequest):
     logger.info("nc-completo orbit payload=%s", req.model_dump())
     horizons = nc_horizons(req.M, req.theta)
     r_outer = horizons[-1] if horizons else None
-    if r_outer is not None and req.r0 <= r_outer:
+    K = _nc_effective_k(req.particle, req.K)
+    capture_candidates = [value for value in (r_outer, req.r_stop) if value is not None]
+    r_capture = max(capture_candidates) if capture_candidates else None
+    if r_capture is not None and req.r0 <= r_capture:
         raise HTTPException(
             status_code=400,
-            detail=f"r0 deve ser > r_+ (horizonte externo). r_+={r_outer:.6g}",
+            detail=f"r0 deve iniciar fora do raio de captura NC. r0={req.r0:.6g}, r_capture={r_capture:.6g}",
         )
 
     try:
@@ -295,6 +494,7 @@ def simulate_nc(req: SimulateNCRequest):
             particle=req.particle,
             r_outer_horizon=r_outer,
             r_stop=req.r_stop,
+            K=K,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -310,9 +510,15 @@ def simulate_nc(req: SimulateNCRequest):
         x = x[:first_invalid]
         y = y[:first_invalid]
 
-    captured = bool(r_outer is not None and len(r) > 0 and np.min(r) <= (r_outer * 1.0005))
-    clipped_by_r_stop = bool(req.r_stop is not None and len(r) > 0 and np.max(r) >= req.r_stop)
-    termination_reason = "captured" if captured else "r_stop" if clipped_by_r_stop else "phi_max"
+    V_orbit = veff_nc_schwarzschild(r=r, M=req.M, theta=req.theta, L=req.L, particle=req.particle, K=K)
+    critical_points = _serialize_nc_critical_points(r, V_orbit, r_outer)
+    extrema = _select_nc_extrema(r, V_orbit, critical_points, r_outer)
+    delta_diagnostics = _nc_delta_diagnostics(r, V_orbit, req.E)
+    circular_orbit = _nc_circular_orbit_status(req.E, extrema)
+    v_min, v_max = _finite_min_max(V_orbit)
+    captured = bool(r_capture is not None and len(r) > 0 and np.min(r) <= (r_capture * 1.0005))
+    stopped_at_r_stop = bool(req.r_stop is not None and len(r) > 0 and np.min(r) <= (req.r_stop * 1.0005))
+    termination_reason = "captured" if captured else "phi_max"
     first_r = float(r[0]) if len(r) else None
     last_r = float(r[-1]) if len(r) else None
     logger.info(
@@ -338,11 +544,16 @@ def simulate_nc(req: SimulateNCRequest):
             "particle": req.particle,
             "M": req.M,
             "theta": req.theta,
+            "K": K,
             "E": req.E,
             "L": req.L,
             "b": (req.L / req.E) if req.E != 0 else None,
+            "mode": "nc-tcc",
+            "physical_model": "nc-tcc-eq47",
             "r0": req.r0,
             "r_stop": req.r_stop,
+            "r_capture": r_capture,
+            "capture_radius_effective": r_capture,
             "radial_sign": req.radial_sign,
             "phi_max": req.phi_max,
             "n": req.n,
@@ -350,8 +561,15 @@ def simulate_nc(req: SimulateNCRequest):
             "horizons": horizons,
             "r_outer_horizon": r_outer,
             "captured": captured,
-            "clipped_by_r_stop": clipped_by_r_stop,
+            "clipped_by_r_stop": False,
+            "stopped_at_r_stop": stopped_at_r_stop,
             "termination_reason": termination_reason,
+            "V_min_raw": v_min,
+            "V_max_raw": v_max,
+            "critical_points": critical_points,
+            "circular_orbit": circular_orbit,
+            **extrema,
+            **delta_diagnostics,
             "points_returned": int(len(r)),
         },
     )
@@ -372,7 +590,6 @@ def simulate_nc_legacy(req: SimulateNCLegacyRequest):
                 theta=req.theta,
                 n_points=req.n,
             )
-            energy_level = req.E
         elif req.particle == "photon":
             phi, r, V = orbita_foton_nc(
                 b=req.b,
@@ -380,9 +597,9 @@ def simulate_nc_legacy(req: SimulateNCLegacyRequest):
                 theta=req.theta,
                 n_points=req.n,
             )
-            energy_level = 1.0 / (req.b * req.b)
         else:
             raise ValueError("particle must be massive or photon")
+        energy_level = _legacy_energy_level(req.particle, req.E, req.b)
     except ValueError as exc:
         logger.warning("simulate_nc_legacy failed: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -399,6 +616,8 @@ def simulate_nc_legacy(req: SimulateNCLegacyRequest):
         x = x[:first_invalid]
         y = y[:first_invalid]
 
+    V = _legacy_potential(r, req.particle, req.L, req.theta)
+    diagnostics = _legacy_orbit_diagnostics(r, V, energy_level)
     captured = bool(len(r) > 0 and np.min(r) <= (req.capture_radius * 1.002))
     returned = bool(len(r) > 2 and not captured and abs(float(r[-1]) - float(r[0])) <= max(1.0e-6, 0.01 * rst))
     termination_reason = "captured" if captured else "turning_point" if returned else "u_max"
@@ -425,12 +644,14 @@ def simulate_nc_legacy(req: SimulateNCLegacyRequest):
         meta={
             "metric": req.metric,
             "mode": "nc-legado",
+            "physical_model": "nc-legacy-polynomial",
             "particle": req.particle,
             "theta": req.theta,
             "L": req.L,
             "E": req.E,
             "b": req.b,
             "energy_level": energy_level,
+            "energy_line_convention": "E" if req.particle == "massive" else "1/b^2",
             "rst": rst,
             "norbit": req.norbit,
             "capture_radius": req.capture_radius,
@@ -442,6 +663,7 @@ def simulate_nc_legacy(req: SimulateNCLegacyRequest):
             "last_r": last_r,
             "V_min": v_min,
             "V_max": v_max,
+            **diagnostics,
         },
     )
 
@@ -523,6 +745,7 @@ def simulate_nc_maple(req: SimulateNCMapleRequest):
         y=y.tolist(),
         meta={
             "metric": req.metric,
+            "physical_model": "nc-maple-approximation",
             "m": req.m,
             "theta": req.theta,
             "kappa": req.kappa,

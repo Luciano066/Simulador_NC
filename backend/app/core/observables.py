@@ -51,20 +51,51 @@ def fprime_nc_schwarzschild(r: np.ndarray, M: float, theta: float) -> np.ndarray
     mp = _mass_prime_nc(r, M, theta)
     return (2.0 * m) / (r * r) - (2.0 * mp) / r
 
-def veff_nc_schwarzschild(r: np.ndarray, M: float, theta: float, L: float, particle: str) -> np.ndarray:
+def kappa_from_particle(particle: str) -> float:
+    if particle == "massive":
+        return 0.5
+    if particle == "photon":
+        return 0.0
+    raise ValueError("particle deve ser 'massive' ou 'photon'")
+
+
+def veff_nc_schwarzschild(
+    r: np.ndarray,
+    M: float,
+    theta: float,
+    L: float,
+    particle: str,
+    K: float | None = None,
+) -> np.ndarray:
     """
-    Potencial efetivo na convenção do TCC:
-      (1/2) (dr/dλ)^2 + V_eff(r) = E
-      V_eff = f(r) * (K + L^2/(2r^2))
-    com K=1/2 (massivo) e K=0 (fóton).
+    Potencial efetivo da Eq. 47 do TCC:
+      (1/2) (dr/dlambda)^2 + V_eff(r) = E
+      V_eff = f_nc(r) * (K + L^2/(2r^2)).
     """
     f = f_nc_schwarzschild(r, M, theta)
     L2_over_2r2 = (L * L) / (2.0 * r * r)
-    if particle == "massive":
-        return f * (0.5 + L2_over_2r2)
-    if particle == "photon":
-        return f * L2_over_2r2
-    raise ValueError("particle deve ser 'massive' ou 'photon'")
+    kappa = kappa_from_particle(particle) if K is None else K
+    return f * (kappa + L2_over_2r2)
+
+
+def dveff_nc_schwarzschild_dr(
+    r: np.ndarray,
+    M: float,
+    theta: float,
+    L: float,
+    particle: str,
+    K: float | None = None,
+) -> np.ndarray:
+    """
+    Derivada radial do mesmo V_eff usado em veff_nc_schwarzschild.
+    """
+    f = f_nc_schwarzschild(r, M, theta)
+    fp = fprime_nc_schwarzschild(r, M, theta)
+    kappa = kappa_from_particle(particle) if K is None else K
+    l_term = (L * L) / (2.0 * r * r)
+    dl_term_dr = -(L * L) / (r * r * r)
+
+    return fp * (kappa + l_term) + f * dl_term_dr
 
 
 def legacy_rst_massive(L: float) -> float:

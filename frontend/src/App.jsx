@@ -1,53 +1,36 @@
 import { useEffect, useMemo, useState } from "react";
-import { Header } from "./components/Header";
+import { AppHeader } from "./components/AppHeader";
 import { LegacyNcOrbitPlot } from "./components/LegacyNcOrbitPlot";
 import { LegacyNcParameterPanel } from "./components/LegacyNcParameterPanel";
 import { LegacyNcPotentialPlot } from "./components/LegacyNcPotentialPlot";
-import { MapleOrbitPlot } from "./components/MapleOrbitPlot";
-import { MapleParameterPanel } from "./components/MapleParameterPanel";
-import { MaplePotentialPlot } from "./components/MaplePotentialPlot";
-import { NcOrbitPlot } from "./components/NcOrbitPlot";
-import { NcParameterPanel } from "./components/NcParameterPanel";
-import { NcPotentialPlot } from "./components/NcPotentialPlot";
+import { ModeTabs } from "./components/ModeTabs";
 import { OrbitPlot } from "./components/OrbitPlot";
 import { ParameterPanel } from "./components/ParameterPanel";
 import { PotentialPlot } from "./components/PotentialPlot";
+import { SimulationLayout } from "./components/SimulationLayout";
 import { useLegacyNcSimulation } from "./hooks/useLegacyNcSimulation";
-import { useMapleSimulation } from "./hooks/useMapleSimulation";
-import { useNcSimulation } from "./hooks/useNcSimulation";
 import { useSchwarzschildSimulation } from "./hooks/useSchwarzschildSimulation";
 
 export default function App() {
-  const [darkMode, setDarkMode] = useState(true);
+  const [activeMode, setActiveMode] = useState("classic");
   const schwarzschild = useSchwarzschildSimulation();
-  const nc = useNcSimulation();
-  const maple = useMapleSimulation();
   const legacy = useLegacyNcSimulation();
 
   useEffect(() => {
-    document.body.classList.toggle("dark-mode", darkMode);
-  }, [darkMode]);
+    document.body.classList.add("dark-mode");
+    return () => document.body.classList.remove("dark-mode");
+  }, []);
 
   const plotTheme = useMemo(() => {
-    if (darkMode) {
-      return {
-        paper: "#181F2F",
-        plot: "#181F2F",
-        grid: "#353549",
-        text: "#ffffff",
-        accent: "#FFC700",
-        horizonFill: "rgba(255,255,255,0.08)",
-      };
-    }
     return {
-      paper: "#f6f6f6",
-      plot: "#f6f6f6",
-      grid: "#c1bfbf",
-      text: "#000000",
-      accent: "#ffdb57",
-      horizonFill: "rgba(0,0,0,0.08)",
+      paper: "#0f172a",
+      plot: "#0b1120",
+      grid: "#1e293b",
+      text: "#e5e7eb",
+      accent: "#38bdf8",
+      horizonFill: "rgba(56,189,248,0.12)",
     };
-  }, [darkMode]);
+  }, []);
 
   const baseLayout = useMemo(
     () => ({
@@ -74,145 +57,104 @@ export default function App() {
 
   return (
     <div className="page">
-      <Header
-        darkMode={darkMode}
-        onToggleTheme={() => setDarkMode((value) => !value)}
-        particle={schwarzschild.p.particle}
-        onParticleChange={(particle) => schwarzschild.setP((state) => ({ ...state, particle }))}
-      />
+      <AppHeader />
+      <ModeTabs activeMode={activeMode} onChange={setActiveMode} />
 
-      <ParameterPanel
-        p={schwarzschild.p}
-        setNum={schwarzschild.setNum}
-        setStr={schwarzschild.setStr}
-        useEnergyParam={schwarzschild.useEnergyParam}
-        setUseEnergyParam={schwarzschild.setUseEnergyParam}
-        useEnergyParamForMassive={schwarzschild.useEnergyParamForMassive}
-        autoRange={schwarzschild.autoRange}
-        setAutoRange={schwarzschild.setAutoRange}
-        rMinUsed={schwarzschild.rMinUsed}
-        rMaxUsed={schwarzschild.rMaxUsed}
-        orbitLoading={schwarzschild.orbitLoading}
-        potentialLoading={schwarzschild.potentialLoading}
-        runOrbit={schwarzschild.runOrbit}
-        runPotential={schwarzschild.runPotential}
-        phiMax={schwarzschild.phi_max}
-        b={schwarzschild.b}
-        bcrit={schwarzschild.bcrit}
-        energyParam={schwarzschild.energyParam}
-        energyLabel={schwarzschild.energyLabel}
-        orbitErr={schwarzschild.orbitErr}
-        potentialErr={schwarzschild.potentialErr}
-      />
-
-      <OrbitPlot
-        traj={schwarzschild.traj}
-        horizon={schwarzschild.horizon}
-        photonSphere={schwarzschild.photonSphere}
-        plotTheme={plotTheme}
-        baseLayout={baseLayout}
-        axisBase={axisBase}
-      />
-
-      <PotentialPlot
-        p={schwarzschild.p}
-        veff={schwarzschild.veff}
-        energyParam={schwarzschild.energyParam}
-        energyLabel={schwarzschild.energyLabel}
-        critPoints={schwarzschild.critPoints}
-        potentialStats={schwarzschild.potentialStats}
-        horizon={schwarzschild.horizon}
-        photonSphere={schwarzschild.photonSphere}
-        plotTheme={plotTheme}
-        baseLayout={baseLayout}
-        axisBase={axisBase}
-      />
-
-      <NcParameterPanel
-        ncOrbit={nc.ncOrbit}
-        ncPotential={nc.ncPotential}
-        setNcOrbitNum={nc.setNcOrbitNum}
-        setNcOrbitStr={nc.setNcOrbitStr}
-        setNcPotentialNum={nc.setNcPotentialNum}
-        setNcPotentialStr={nc.setNcPotentialStr}
-        runNCOrbit={nc.runNCOrbit}
-        runNCPotential={nc.runNCPotential}
-        applyNcPreset={nc.applyNcPreset}
-        ncOrbitLoading={nc.ncOrbitLoading}
-        ncPotentialLoading={nc.ncPotentialLoading}
-        ncPhiMax={nc.ncPhiMax}
-        ncB={nc.ncB}
-        ncOrbitErr={nc.ncOrbitErr}
-        ncPotentialErr={nc.ncPotentialErr}
-      />
-
-      <NcOrbitPlot ncTraj={nc.ncTraj} plotTheme={plotTheme} baseLayout={baseLayout} axisBase={axisBase} />
-
-      <NcPotentialPlot
-        ncPotential={nc.ncPotential}
-        ncVeff={nc.ncVeff}
-        plotTheme={plotTheme}
-        baseLayout={baseLayout}
-        axisBase={axisBase}
-      />
-
-      <MapleParameterPanel
-        mapleParams={maple.mapleParams}
-        mapleTraj={maple.mapleTraj}
-        mapleVeff={maple.mapleVeff}
-        setMapleNum={maple.setMapleNum}
-        applyMaplePreset={maple.applyMaplePreset}
-        runMapleOrbit={maple.runMapleOrbit}
-        runMaplePotential={maple.runMaplePotential}
-        mapleOrbitLoading={maple.mapleOrbitLoading}
-        maplePotentialLoading={maple.maplePotentialLoading}
-        mapleOrbitErr={maple.mapleOrbitErr}
-        maplePotentialErr={maple.maplePotentialErr}
-      />
-
-      <MapleOrbitPlot
-        mapleTraj={maple.mapleTraj}
-        plotTheme={plotTheme}
-        baseLayout={baseLayout}
-        axisBase={axisBase}
-      />
-
-      <MaplePotentialPlot
-        mapleVeff={maple.mapleVeff}
-        plotTheme={plotTheme}
-        baseLayout={baseLayout}
-        axisBase={axisBase}
-      />
-
-      <LegacyNcParameterPanel
-        legacyParams={legacy.legacyParams}
-        legacyTraj={legacy.legacyTraj}
-        legacyVeff={legacy.legacyVeff}
-        setLegacyNum={legacy.setLegacyNum}
-        setLegacyStr={legacy.setLegacyStr}
-        setLegacyBool={legacy.setLegacyBool}
-        applyLegacyPreset={legacy.applyLegacyPreset}
-        runLegacyOrbit={legacy.runLegacyOrbit}
-        runLegacyPotential={legacy.runLegacyPotential}
-        legacyOrbitLoading={legacy.legacyOrbitLoading}
-        legacyPotentialLoading={legacy.legacyPotentialLoading}
-        legacyOrbitErr={legacy.legacyOrbitErr}
-        legacyPotentialErr={legacy.legacyPotentialErr}
-      />
-
-      <LegacyNcOrbitPlot
-        legacyTraj={legacy.legacyTraj}
-        plotTheme={plotTheme}
-        baseLayout={baseLayout}
-        axisBase={axisBase}
-      />
-
-      <LegacyNcPotentialPlot
-        legacyVeff={legacy.legacyVeff}
-        plotTheme={plotTheme}
-        baseLayout={baseLayout}
-        axisBase={axisBase}
-      />
+      {activeMode === "classic" ? (
+        <SimulationLayout
+          title="Schwarzschild classico"
+          description="Geodesicas e potencial efetivo no espaco-tempo de Schwarzschild."
+          parameters={
+            <ParameterPanel
+              p={schwarzschild.p}
+              setNum={schwarzschild.setNum}
+              setStr={schwarzschild.setStr}
+              useEnergyParam={schwarzschild.useEnergyParam}
+              setUseEnergyParam={schwarzschild.setUseEnergyParam}
+              useEnergyParamForMassive={schwarzschild.useEnergyParamForMassive}
+              autoRange={schwarzschild.autoRange}
+              setAutoRange={schwarzschild.setAutoRange}
+              rMinUsed={schwarzschild.rMinUsed}
+              rMaxUsed={schwarzschild.rMaxUsed}
+              orbitLoading={schwarzschild.orbitLoading}
+              potentialLoading={schwarzschild.potentialLoading}
+              runSimulation={schwarzschild.runSimulation}
+              resetDefaults={schwarzschild.resetDefaults}
+              phiMax={schwarzschild.phi_max}
+              b={schwarzschild.b}
+              bcrit={schwarzschild.bcrit}
+              energyParam={schwarzschild.energyParam}
+              energyLabel={schwarzschild.energyLabel}
+              orbitErr={schwarzschild.orbitErr}
+              potentialErr={schwarzschild.potentialErr}
+            />
+          }
+          potential={
+            <PotentialPlot
+              p={schwarzschild.p}
+              veff={schwarzschild.veff}
+              energyParam={schwarzschild.energyParam}
+              energyLabel={schwarzschild.energyLabel}
+              critPoints={schwarzschild.critPoints}
+              potentialStats={schwarzschild.potentialStats}
+              horizon={schwarzschild.horizon}
+              photonSphere={schwarzschild.photonSphere}
+              plotTheme={plotTheme}
+              baseLayout={baseLayout}
+              axisBase={axisBase}
+            />
+          }
+          orbit={
+            <OrbitPlot
+              traj={schwarzschild.traj}
+              horizon={schwarzschild.horizon}
+              photonSphere={schwarzschild.photonSphere}
+              plotTheme={plotTheme}
+              baseLayout={baseLayout}
+              axisBase={axisBase}
+            />
+          }
+        />
+      ) : (
+        <SimulationLayout
+          title="Buraco negro NC - TCC/legado"
+          description="Modelo nao comutativo legado com potencial polinomial e densidade de massa espalhada."
+          parameters={
+            <LegacyNcParameterPanel
+              legacyParams={legacy.legacyParams}
+              legacyTraj={legacy.legacyTraj}
+              legacyVeff={legacy.legacyVeff}
+              setLegacyNum={legacy.setLegacyNum}
+              setLegacyStr={legacy.setLegacyStr}
+              setLegacyBool={legacy.setLegacyBool}
+              applyLegacyPreset={legacy.applyLegacyPreset}
+              runLegacySimulation={legacy.runLegacySimulation}
+              runLegacyPotential={legacy.runLegacyPotential}
+              resetLegacyDefaults={legacy.resetLegacyDefaults}
+              legacyOrbitLoading={legacy.legacyOrbitLoading}
+              legacyPotentialLoading={legacy.legacyPotentialLoading}
+              legacyOrbitErr={legacy.legacyOrbitErr}
+              legacyPotentialErr={legacy.legacyPotentialErr}
+            />
+          }
+          potential={
+            <LegacyNcPotentialPlot
+              legacyVeff={legacy.legacyVeff}
+              plotTheme={plotTheme}
+              baseLayout={baseLayout}
+              axisBase={axisBase}
+            />
+          }
+          orbit={
+            <LegacyNcOrbitPlot
+              legacyTraj={legacy.legacyTraj}
+              plotTheme={plotTheme}
+              baseLayout={baseLayout}
+              axisBase={axisBase}
+            />
+          }
+        />
+      )}
     </div>
   );
 }

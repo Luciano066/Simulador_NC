@@ -5,8 +5,7 @@ Projeto com frontend React/Vite e backend FastAPI para simulacao de orbitas rela
 Modos disponiveis:
 
 - Schwarzschild classico.
-- Schwarzschild nao comutativo completo, com massa efetiva espalhada.
-- Aproximacao Maple/TCC para reproduzir os graficos gerados no Maple.
+- Buraco negro nao comutativo no modelo TCC/legado, compatível com o simulador antigo.
 
 ## Requisitos
 

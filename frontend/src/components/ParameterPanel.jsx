@@ -1,4 +1,5 @@
 import { ErrorMessage } from "./ErrorMessage";
+import { InfoBadge } from "./InfoBadge";
 
 export function ParameterPanel({
   p,
@@ -13,8 +14,8 @@ export function ParameterPanel({
   rMaxUsed,
   orbitLoading,
   potentialLoading,
-  runOrbit,
-  runPotential,
+  runSimulation,
+  resetDefaults,
   phiMax,
   b,
   bcrit,
@@ -23,35 +24,52 @@ export function ParameterPanel({
   orbitErr,
   potentialErr,
 }) {
-  return (
-    <>
-      <div className="meta-row">
-        <label className="field">
-          <span>Modo do site (Ebar)</span>
-          <input
-            type="checkbox"
-            checked={useEnergyParam}
-            onChange={(event) => setUseEnergyParam(event.target.checked)}
-          />
-        </label>
-        <label className="field">
-          <span>Auto r_min/r_max</span>
-          <input
-            type="checkbox"
-            checked={autoRange}
-            onChange={(event) => setAutoRange(event.target.checked)}
-          />
-        </label>
-      </div>
+  const loading = orbitLoading || potentialLoading;
 
-      <article>
-        <div className="programa">
-          <h5>1. Ajuste os parametros da orbita</h5>
+  return (
+    <article className="parameter-card">
+      <div className="programa">
+        <div className="card-title-row">
+          <div>
+            <p className="eyebrow">Entrada</p>
+            <h5>Parametros</h5>
+          </div>
+          <InfoBadge>{p.particle === "massive" ? "Massiva" : "Foton"}</InfoBadge>
+        </div>
+
+        <div className="meta-row">
+          <label className="field check-field">
+            <input
+              type="checkbox"
+              checked={useEnergyParam}
+              onChange={(event) => setUseEnergyParam(event.target.checked)}
+            />
+            <span>Usar Ebar</span>
+          </label>
+          <label className="field check-field">
+            <input
+              type="checkbox"
+              checked={autoRange}
+              onChange={(event) => setAutoRange(event.target.checked)}
+            />
+            <span>Auto r_min/r_max</span>
+          </label>
+        </div>
+
           <div className="input">
             <div className="input-grid">
               <label className="field">
+                Tipo de particula
+                <select className="css-input" value={p.particle} onChange={setStr("particle")}>
+                  <option value="massive">Corpo massivo</option>
+                  <option value="photon">Foton</option>
+                </select>
+              </label>
+
+              <label className="field">
                 Massa central (M)
                 <input className="css-input" type="number" step="0.1" value={p.M} onChange={setNum("M")} />
+                <input className="range-input" type="range" min="0.1" max="5" step="0.1" value={p.M} onChange={setNum("M")} />
               </label>
 
               <label className="field">
@@ -63,6 +81,7 @@ export function ParameterPanel({
               <label className="field">
                 Momento angular (L)
                 <input className="css-input" type="number" step="0.1" value={p.L} onChange={setNum("L")} />
+                <input className="range-input" type="range" min="0.1" max="12" step="0.1" value={p.L} onChange={setNum("L")} />
                 <small>Para foton, b = L / E</small>
               </label>
 
@@ -90,6 +109,7 @@ export function ParameterPanel({
                   value={p.turns}
                   onChange={setNum("turns")}
                 />
+                <input className="range-input" type="range" min="1" max="20" step="1" value={p.turns} onChange={setNum("turns")} />
               </label>
 
               <label className="field">
@@ -128,12 +148,14 @@ export function ParameterPanel({
             </div>
           </div>
 
-          <button onClick={runOrbit} disabled={orbitLoading} className="click">
-            {orbitLoading ? "Calculando orbita..." : "Gerar Orbita"}
-          </button>
-          <button onClick={runPotential} disabled={potentialLoading} className="click">
-            {potentialLoading ? "Calculando potencial..." : "Gerar Potencial"}
-          </button>
+          <div className="action-row">
+            <button onClick={runSimulation} disabled={loading} className="click primary-action">
+              {loading ? "Calculando..." : "Gerar simulacao"}
+            </button>
+            <button onClick={resetDefaults} disabled={loading} className="click secondary-action">
+              Restaurar padrao
+            </button>
+          </div>
 
           <div className="valor">
             phi_max = <strong>{phiMax.toFixed(3)}</strong> rad (turns = {p.turns}) | b = L/E =
@@ -148,8 +170,7 @@ export function ParameterPanel({
 
           <ErrorMessage label="Orbita" message={orbitErr} />
           <ErrorMessage label="Potencial" message={potentialErr} />
-        </div>
-      </article>
-    </>
+      </div>
+    </article>
   );
 }

@@ -2,9 +2,9 @@ import numpy as np
 from scipy.integrate import cumulative_trapezoid, solve_ivp
 
 from app.core.observables import (
-    f_nc_schwarzschild,
+    dveff_nc_schwarzschild_dr,
     f_schwarzschild,
-    fprime_nc_schwarzschild,
+    kappa_from_particle,
     nc_horizons,
     potencial_foton_nc,
     potencial_massiva_nc,
@@ -166,6 +166,7 @@ def orbit_r_phi_nc(
     particle: str,
     r_outer_horizon: float | None = None,
     r_stop: float | None = None,
+    K: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Integrate a noncommutative Schwarzschild orbit with u(phi)=1/r.
@@ -174,6 +175,8 @@ def orbit_r_phi_nc(
       (1/2) (dr/dlambda)^2 + V_eff(r) = E
       V_eff(r) = f(r) * (K + L^2/(2 r^2))
     with K=1/2 for massive particles and K=0 for photons.
+    The orbit acceleration uses dV_eff/dr from the same function plotted by
+    /veff_nc, so the trajectory and potential share one physical model.
     """
     if M <= 0:
         raise ValueError("M > 0")
@@ -190,14 +193,9 @@ def orbit_r_phi_nc(
     if r_stop is not None and r_stop <= 0:
         raise ValueError("r_stop > 0")
 
-    if particle == "massive":
-        kappa = 0.5
-    elif particle == "photon":
-        kappa = 0.0
-    else:
-        raise ValueError("particle must be 'massive' or 'photon'")
+    kappa = kappa_from_particle(particle) if K is None else K
 
-    veff0 = float(veff_nc_schwarzschild(np.array([r0], dtype=np.float64), M, theta, L, particle)[0])
+    veff0 = float(veff_nc_schwarzschild(np.array([r0], dtype=np.float64), M, theta, L, particle, K=kappa)[0])
     if E < veff0:
         raise ValueError(
             f"Forbidden parameters at r0={r0:.6g}: E={E:.6g} < V_eff(r0)={veff0:.6g}. "
@@ -219,13 +217,14 @@ def orbit_r_phi_nc(
     else:
         r_outer = r_outer_horizon
 
+    capture_candidates = [value for value in (r_outer, r_stop) if value is not None]
+    r_capture = max(capture_candidates) if capture_candidates else None
+
     def d2u_dphi2(u_val: float) -> float:
         if u_val <= 0.0 or not np.isfinite(u_val):
             return np.nan
         r_val = 1.0 / u_val
-        f_val = float(f_nc_schwarzschild(np.array([r_val], dtype=np.float64), M, theta)[0])
-        fp_val = float(fprime_nc_schwarzschild(np.array([r_val], dtype=np.float64), M, theta)[0])
-        dVdr = fp_val * (kappa + (L2 / (2.0 * r_val * r_val))) - f_val * (L2 / (r_val * r_val * r_val))
+        dVdr = float(dveff_nc_schwarzschild_dr(np.array([r_val], dtype=np.float64), M, theta, L, particle, K=kappa)[0])
         return dVdr / (L2 * u_val * u_val)
 
     def rhs(_phi: float, y: np.ndarray) -> list[float]:
@@ -251,8 +250,7 @@ def orbit_r_phi_nc(
     origin_event.terminal = True
     origin_event.direction = -1
 
-    if r_outer is not None:
-        r_capture = r_outer * 1.0005
+    if r_capture is not None:
 
         def capture_event(_phi: float, y: np.ndarray) -> float:
             u_val = float(y[0])
@@ -264,19 +262,6 @@ def orbit_r_phi_nc(
         capture_event.direction = -1
         include_event_indexes.add(len(events))
         events.append(capture_event)
-
-    if r_stop is not None:
-
-        def r_stop_event(_phi: float, y: np.ndarray) -> float:
-            u_val, up_val = float(y[0]), float(y[1])
-            if u_val <= 0.0 or up_val >= 0.0:
-                return 1.0
-            return r_stop - (1.0 / u_val)
-
-        r_stop_event.terminal = True
-        r_stop_event.direction = -1
-        include_event_indexes.add(len(events))
-        events.append(r_stop_event)
 
     phi_eval = np.linspace(0.0, phi_max, n, dtype=np.float64)
     sol = solve_ivp(

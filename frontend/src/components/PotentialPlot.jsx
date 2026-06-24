@@ -16,7 +16,7 @@ export function PotentialPlot({
   return (
     <article>
       <div className="programa">
-        <h5>Energia potencial efetiva</h5>
+        <h5>Potencial efetivo classico</h5>
         <div className="graf1 plot-card">
           <Plot
             data={[
@@ -49,7 +49,7 @@ export function PotentialPlot({
             ]}
             layout={{
               ...baseLayout,
-              title: "Energia potencial efetiva",
+              title: "Potencial efetivo classico",
               xaxis: { title: "r", ...axisBase },
               yaxis: {
                 title: "U_eff",

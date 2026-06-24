@@ -62,6 +62,7 @@ class VeffNCRequest(RequestModel):
     particle: ParticleType = Field(..., description="massive particle or photon")
     M: float = Field(1.0, gt=0, le=MAX_PARAMETER, description="black-hole mass in G=c=1 units")
     theta: float = Field(1.0, gt=0, le=MAX_PARAMETER, description="noncommutativity parameter with dimensions L^2")
+    K: Optional[float] = Field(None, ge=0, le=MAX_PARAMETER, description="geodesic type constant: 1/2 for massive, 0 for light")
     E: float = Field(0.3, ge=0, le=MAX_PARAMETER, description="energy in 1/2 rdot^2 + V_eff = E")
     L: float = Field(..., ge=0, le=MAX_PARAMETER, description="angular momentum")
     r_min: float = Field(0.02, gt=0, le=MAX_RADIUS)
@@ -86,6 +87,7 @@ class SimulateNCRequest(RequestModel):
     particle: ParticleType = Field("massive")
     M: float = Field(1.0, gt=0, le=MAX_PARAMETER)
     theta: float = Field(1.0, gt=0, le=MAX_PARAMETER, description="noncommutativity parameter with dimensions L^2")
+    K: Optional[float] = Field(None, ge=0, le=MAX_PARAMETER, description="geodesic type constant: 1/2 for massive, 0 for light")
     E: float = Field(0.3, ge=0, le=MAX_PARAMETER, description="energy in 1/2 rdot^2 + V_eff = E")
     L: float = Field(..., gt=0, le=MAX_PARAMETER, description="angular momentum")
     r0: float = Field(..., gt=0, le=MAX_RADIUS)
@@ -93,7 +95,7 @@ class SimulateNCRequest(RequestModel):
         None,
         gt=0,
         le=MAX_RADIUS,
-        description="optional escape-radius cutoff for visualization",
+        description="optional inner capture radius; trajectory stops as captured when r <= r_stop",
     )
     radial_sign: RadialSign = Field("in", description="'in' falls inward, 'out' starts outward")
     phi_max: float = Field(80.0, gt=0, le=MAX_PHI)
