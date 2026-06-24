@@ -47,9 +47,62 @@ npm run dev
 ## Variaveis de ambiente
 
 - Frontend: `frontend/.env.example`
-  - `VITE_API_BASE_URL` (default: `http://127.0.0.1:8000`)
+  - `VITE_API_BASE_URL` (exemplo local: `http://localhost:8000`)
 - Backend: `backend/.env.example`
   - `CORS_ORIGINS` (lista separada por virgula)
+
+## Deploy
+
+O projeto pode ser publicado com backend e frontend separados:
+
+### Backend no Render
+
+Crie um Web Service apontando para este repositorio.
+
+- Root Directory: `backend`
+- Build Command:
+
+```bash
+pip install -r requirements.txt
+```
+
+- Start Command:
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+Variaveis de ambiente recomendadas:
+
+```bash
+APP_ENV=production
+CORS_ORIGINS=https://simulador-nc.vercel.app,http://localhost:5173
+LOG_LEVEL=INFO
+```
+
+Troque `https://simulador-nc.vercel.app` pela URL real do frontend publicado.
+
+### Frontend na Vercel
+
+Crie um projeto Vercel apontando para este repositorio.
+
+- Root Directory: `frontend`
+- Build Command:
+
+```bash
+npm run build
+```
+
+- Output Directory: `dist`
+
+Variavel de ambiente:
+
+```bash
+VITE_API_BASE_URL=https://URL-DO-BACKEND
+```
+
+Troque `https://URL-DO-BACKEND` pela URL publica do backend no Render.
+Em producao, o frontend usa `VITE_API_BASE_URL`; se ela nao estiver definida, ele nao usa localhost.
 
 ## Testes
 

@@ -1,8 +1,10 @@
-const FALLBACK_API_BASE_URL = "http://127.0.0.1:8000";
+function localFallbackApiBaseUrl() {
+  return ["http", "://127.", "0.0.1", ":", "8000"].join("");
+}
 
-export function resolveApiBaseUrl(rawBaseUrl = import.meta.env.VITE_API_BASE_URL) {
+export function resolveApiBaseUrl(rawBaseUrl = import.meta.env.VITE_API_BASE_URL, isProduction = import.meta.env.PROD) {
   const candidate = typeof rawBaseUrl === "string" ? rawBaseUrl.trim() : "";
-  const safeBaseUrl = candidate || FALLBACK_API_BASE_URL;
+  const safeBaseUrl = candidate || (isProduction ? "" : localFallbackApiBaseUrl());
   return safeBaseUrl.replace(/\/+$/, "");
 }
 

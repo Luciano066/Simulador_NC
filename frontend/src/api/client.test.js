@@ -18,7 +18,8 @@ describe("API client", () => {
 
   it("normaliza a URL base", () => {
     expect(resolveApiBaseUrl("http://localhost:8000/")).toBe("http://localhost:8000");
-    expect(resolveApiBaseUrl("")).toBe("http://127.0.0.1:8000");
+    expect(resolveApiBaseUrl("", false)).toBe("http://127.0.0.1:8000");
+    expect(resolveApiBaseUrl("", true)).toBe("");
   });
 
   it("propaga detail da API em erros", async () => {
